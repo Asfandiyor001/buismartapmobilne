@@ -1,0 +1,184 @@
+import { Platform } from 'react-native';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
+const TASK = 'BIU_GPS_PING';
+const INTERVAL = 30000;
+const OFFLINE_QUEUE_KEY = '@offline_events';
+
+// ─── Offline Queue Helpers ────────────────────────────────────────────────────
+
+export async function getOfflineQueue() {
+  try {
+    const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function pushOfflineEvent(event) {
+  try {
+    const queue = await getOfflineQueue();
+    queue.push(event);
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch {
+    /* storage failure — event lost, acceptable tradeoff */
+  }
+}
+
+export async function clearOfflineQueue() {
+  try {
+    await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
+  } catch { /* */ }
+}
+
+// ─── Auto-Sync: flush offline queue when connectivity restores ────────────────
+
+let _syncListenerActive = false;
+
+export function startOfflineSync() {
+  if (_syncListenerActive) return;
+  _syncListenerActive = true;
+
+  NetInfo.addEventListener(async (state) => {
+    if (!state.isConnected) return;
+
+    const queue = await getOfflineQueue();
+    if (!queue.length) return;
+
+    try {
+      const { default: apiClient } = await import('../api/client');
+      await apiClient.post('/work/sync-offline', { events: queue });
+      await clearOfflineQueue();
+    } catch {
+      /* Retry will happen on the next connectivity event */
+    }
+  });
+}
+
+// ─── Background GPS Task ──────────────────────────────────────────────────────
+
+if (Platform.OS !== 'web') {
+  TaskManager.defineTask(TASK, async ({ data, error }) => {
+    if (error || !data?.locations?.[0]) return;
+    const { latitude, longitude, accuracy } = data.locations[0].coords;
+    const payload = {
+      type: 'ping',
+      lat: latitude,
+      lon: longitude,
+      accuracy,
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      const netState = await NetInfo.fetch();
+      if (!netState.isConnected) {
+        await pushOfflineEvent(payload);
+        return;
+      }
+
+      const { default: apiClient } = await import('../api/client');
+      await apiClient.post('/work/ping', { lat: latitude, lon: longitude, accuracy });
+    } catch {
+      // API call failed while online — queue for later sync
+      await pushOfflineEvent(payload);
+    }
+  });
+}
+
+export async function getCurrentLocation() {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Joylashuv ruxsati rad etildi');
+  }
+  const loc = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.High,
+  });
+  return { lat: loc.coords.latitude, lon: loc.coords.longitude };
+}
+
+export function watchLocation(callback, interval = 30000) {
+  let sub = null;
+  let tick = null;
+  let cancelled = false;
+
+  (async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted' || cancelled) return;
+    if (Platform.OS === 'web') {
+      const poll = async () => {
+        if (cancelled) return;
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          callback({ lat: loc.coords.latitude, lon: loc.coords.longitude });
+        } catch { /* */ }
+      };
+      poll();
+      tick = setInterval(poll, interval);
+      return;
+    }
+    sub = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: interval,
+        distanceInterval: 10,
+      },
+      (loc) => {
+        callback({ lat: loc.coords.latitude, lon: loc.coords.longitude });
+      },
+    );
+  })();
+
+  return () => {
+    cancelled = true;
+    if (tick) clearInterval(tick);
+    try {
+      sub?.remove?.();
+    } catch { /* veb: remove ichki xato */ }
+  };
+}
+
+export async function startSilentTracking() {
+  if (Platform.OS === 'web') return false;
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return false;
+
+    await Location.requestBackgroundPermissionsAsync().catch(() => {});
+
+    const running = await Location.hasStartedLocationUpdatesAsync(TASK).catch(() => false);
+    if (running) return true;
+
+    await Location.startLocationUpdatesAsync(TASK, {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: INTERVAL,
+      distanceInterval: 15,
+      deferredUpdatesInterval: INTERVAL,
+      foregroundService: {
+        notificationTitle: 'BIU Smart',
+        notificationBody: 'Ish vaqti kuzatilmoqda',
+        notificationColor: '#028090',
+      },
+      showsBackgroundLocationIndicator: true,
+      pausesUpdatesAutomatically: false,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function stopSilentTracking() {
+  if (Platform.OS === 'web') return;
+  try {
+    const running = await Location.hasStartedLocationUpdatesAsync(TASK);
+    if (running) await Location.stopLocationUpdatesAsync(TASK);
+  } catch {
+    /* silent */
+  }
+}
