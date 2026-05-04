@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "BIU Smart",
-    "slug": "biu-smart-app",
+    "slug": "biu-smart",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -63,7 +63,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
+        "projectId": "a03d4313-d9dc-4684-9b22-a8dc7719c298"
       }
     }
   }

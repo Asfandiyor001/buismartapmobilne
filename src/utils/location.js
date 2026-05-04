@@ -64,6 +64,15 @@ export function startOfflineSync() {
 if (Platform.OS !== 'web') {
   TaskManager.defineTask(TASK, async ({ data, error }) => {
     if (error || !data?.locations?.[0]) return;
+
+    // Only ping the server during the tracking window (07:30–17:30).
+    // 30-minute buffer before/after the 08:00–16:30 work day to capture early arrivals.
+    const _taskNow  = new Date();
+    const _taskMins = _taskNow.getHours() * 60 + _taskNow.getMinutes();
+    const TRACK_START = 7 * 60 + 30;  // 07:30
+    const TRACK_END   = 17 * 60 + 30; // 17:30
+    if (_taskMins < TRACK_START || _taskMins > TRACK_END) return;
+
     const { latitude, longitude, accuracy } = data.locations[0].coords;
     const payload = {
       type: 'ping',
@@ -90,14 +99,19 @@ if (Platform.OS !== 'web') {
 }
 
 export async function getCurrentLocation() {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') {
-    throw new Error('Joylashuv ruxsati rad etildi');
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      throw new Error('Joylashuv ruxsati rad etildi');
+    }
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+    return { lat: loc.coords.latitude, lon: loc.coords.longitude };
+  } catch (error) {
+    console.log('getCurrentLocation error:', error);
+    return null;
   }
-  const loc = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.High,
-  });
-  return { lat: loc.coords.latitude, lon: loc.coords.longitude };
 }
 
 export function watchLocation(callback, interval = 30000) {

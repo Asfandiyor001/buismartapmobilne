@@ -80,14 +80,14 @@ export default function MapScreen({ navigation, route }) {
     setLoading(true);
     setPermError(false);
 
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      setPermError(true);
-      setLoading(false);
-      return;
-    }
-
     try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setPermError(true);
+        setLoading(false);
+        return;
+      }
+
       // Dastlab bir martalik aniqlik
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       processCoords(loc.coords);
@@ -104,7 +104,8 @@ export default function MapScreen({ navigation, route }) {
         { accuracy: Location.Accuracy.High, timeInterval: 15000, distanceInterval: 10 },
         (l) => processCoords(l.coords),
       );
-    } catch {
+    } catch (error) {
+      console.log('Map init error:', error);
       setPermError(true);
     }
     setLoading(false);

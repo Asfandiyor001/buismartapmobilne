@@ -320,15 +320,24 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
   const [elapsed, setElapsed] = useState(initialSeconds || 0);
   const dotAnim = useRef(new Animated.Value(1)).current;
 
-  // Start timer from server-provided liveTotal and tick up every second
+  const hasActive = activeLogProp != null;
+  const activeBuilding = activeLogProp?.buildingName ?? null;
+
+  // Start timer from server-provided liveTotal and tick up every second.
+  // Freeze when day is finished, frozen override is set, or staff is not actively in a building.
   useEffect(() => {
-    if (isDayFinished || frozenSeconds !== null) return;
+    if (isDayFinished || frozenSeconds !== null || !hasActive) return;
     setElapsed(initialSeconds || 0);
     const interval = setInterval(() => {
+      const tickNow  = new Date();
+      const tickMins = tickNow.getHours() * 60 + tickNow.getMinutes();
+      const beforeWork = tickMins < 480;               // before 08:00
+      const abetPause  = tickMins >= 780 && tickMins < 840; // 13:00–14:00
+      if (beforeWork || abetPause) return;             // skip tick — timer frozen without state reset
       setElapsed(prev => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
-  }, [initialSeconds, isDayFinished, frozenSeconds]);
+  }, [initialSeconds, isDayFinished, frozenSeconds, hasActive]);
 
   // Compute timeline rows from raw API logs (supports both old mapped and new raw format)
   const rows = useMemo(() => {
@@ -342,9 +351,6 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
       dur: parseInt(log.durationSeconds ?? log.dur ?? 0),
     }));
   }, [workLogs]);
-
-  const hasActive = activeLogProp != null;
-  const activeBuilding = activeLogProp?.buildingName ?? null;
 
   useEffect(() => {
     if (!hasActive || isDayFinished) { dotAnim.setValue(1); return; }
@@ -365,7 +371,8 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
 
   const total    = frozenSeconds !== null ? frozenSeconds : elapsed;
   const regular  = Math.min(total, 8 * 3600);
-  const overtime = isOT ? Math.max(0, total - 8 * 3600) : 0;
+  // Overtime only counts when staff is actively inside a building AND after work-end time
+  const overtime = isOT && hasActive ? Math.max(0, total - 8 * 3600) : 0;
   const isOvertime = isOT && hasActive;
 
   const regFrac = regular / (8 * 3600);
@@ -1090,13 +1097,19 @@ export default function StaffHomeScreen({ navigation, route }) {
   const isAfterWork =
     nowClock.getHours() > wh ||
     (nowClock.getHours() === wh && nowClock.getMinutes() >= wm);
+  const nowMins      = nowClock.getHours() * 60 + nowClock.getMinutes();
+  const isBeforeWork = nowMins < 480;           // before 08:00
+  const isAbetTime   = nowMins >= 780 && nowMins < 840; // 13:00–14:00
 
   const workTimerDayFinished = !!(todaySession?.is_finished && isAfterWork);
 
   let workTimerStatusLabel;
   if (!todaySession) workTimerStatusLabel = 'Ish kuni boshlanmagan';
+  else if (isBeforeWork) workTimerStatusLabel = 'Ish vaqti boshlanmagan';
+  else if (isAbetTime && !activeLog) workTimerStatusLabel = 'Tushlik tanaffusi';
   else if (todaySession.is_finished && isAfterWork) workTimerStatusLabel = undefined;
   else if (todaySession.is_finished && !isAfterWork) workTimerStatusLabel = 'Aktiv emas';
+  else if (!activeLog && isAfterWork) workTimerStatusLabel = 'Ish kuni tugadi';
   else if (todaySession.status === 'active') workTimerStatusLabel = 'Ishlayapti';
 
   const finishedAt = toHHMM(todaySession?.finished_at || todaySession?.last_exit_time);
@@ -1132,7 +1145,9 @@ export default function StaffHomeScreen({ navigation, route }) {
       return;
     }
     try {
-      const { lat, lon } = await getCurrentLocation();
+      const coords = await getCurrentLocation();
+      const lat = coords?.lat ?? null;
+      const lon = coords?.lon ?? null;
       const result = await checkOut(lat, lon);
       const tf = result?.totalFormatted || '';
       const of = result?.overtimeFormatted || '';

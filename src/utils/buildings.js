@@ -13,9 +13,9 @@ export const BUILDINGS = [
   },
   {
     id: 2,
-    name: 'Bino 2 — Laboratoriya',
+    name: 'Bino 2 — Ta\'lim korpusi 2-binos',
     short: 'Bino 2',
-    desc: 'Ilmiy markaz',
+    desc: "Ta'lim korpusi 2-bino",
     latitude: 39.740624,
     longitude: 64.432623,
     color: '#7C3AED',
@@ -30,16 +30,6 @@ export const BUILDINGS = [
     longitude: 64.4348,
     color: '#F59E0B',
     staffCount: 15,
-  },
-  {
-    id: 4,
-    name: 'Admin uyi — Boshqaruv',
-    short: 'Admin uyi',
-    desc: "Ma'muriyat binosi",
-    latitude: 39.747389,
-    longitude: 64.425345,
-    color: '#059669',
-    staffCount: 8,
   },
 ];
 

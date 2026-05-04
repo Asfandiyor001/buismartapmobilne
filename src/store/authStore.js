@@ -170,6 +170,24 @@ export const useAuthStore = create((set, get) => ({
       if (!token || !rawUser) {
         return { restored: false, biometricEnabled: false };
       }
+
+      // Verify JWT has not expired before restoring the session
+      try {
+        const base64Payload = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+        if (base64Payload) {
+          const payload = JSON.parse(atob(base64Payload));
+          const isExpired = payload.exp && payload.exp * 1000 < Date.now();
+          if (isExpired) {
+            await AsyncStorage.multiRemove(['biu_token', 'biu_user', 'biu_biometric_enabled']);
+            return { restored: false, biometricEnabled: false };
+          }
+        }
+      } catch {
+        // Token parse failed — treat as invalid and clear
+        await AsyncStorage.multiRemove(['biu_token', 'biu_user', 'biu_biometric_enabled']);
+        return { restored: false, biometricEnabled: false };
+      }
+
       const user = enrichUser(JSON.parse(rawUser));
       const isBiometricEnabled = bioStr === 'true';
       set({
