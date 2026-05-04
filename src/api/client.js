@@ -6,8 +6,12 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
 
 const apiClient = axios.create({
   baseURL: `${BASE_URL}/api`,
-  timeout: 10000,
-  headers: { 'Content-Type': 'application/json' },
+  timeout: 15000,
+  headers: {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+    'cloudflare-skip-browser-warning': 'true',
+  },
 });
 
 apiClient.interceptors.request.use(async (config) => {

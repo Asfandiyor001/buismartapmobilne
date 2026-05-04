@@ -105,10 +105,13 @@ export const useAuthStore = create((set, get) => ({
       if (bioAvailable) {
         await get().enableBiometric();
       }
-    } catch (e) {
-      const msg = typeof e === 'string' ? e : e?.message || 'Xato yuz berdi';
-      set({ error: msg, isLoading: false });
-      throw new Error(msg);
+    } catch (error) {
+      const message =
+        error?.message ||
+        error?.response?.data?.message ||
+        'Tizimga ulanishda xatolik';
+      set({ error: message, isLoading: false });
+      throw error;
     }
   },
 
