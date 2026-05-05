@@ -20,6 +20,7 @@ import {
   CheckCircle2, AlertTriangle,
   X, Zap, CheckCheck, Navigation, RefreshCw, Users,
 } from 'lucide-react-native';
+import { format } from 'date-fns';
 import { Colors, FontSize, FontWeight, Spacing, Radius, Shadow } from '../../theme';
 import {
   StatusPill, SectionHeader, ProgressBar, Card, BottomNav,
@@ -31,6 +32,7 @@ import {
 } from '../../src/utils/buildings';
 import { useWorkStore, useAuthStore, useNotificationStore } from '../../src/store';
 import { getCurrentLocation, startSilentTracking, pushOfflineEvent, startOfflineSync } from '../../src/utils/location';
+import apiClient from '../../src/api/client';
 import { workAPI } from '../../src/api/work.api';
 import { StaffMessagesPanel, TYPE_META, formatHomeActivityTime } from './MessagesScreen';
 import MyReportScreen from './MyReportScreen';
@@ -55,12 +57,30 @@ function toHHMM(value) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const formatLogTime = (timeStr) => {
+  if (!timeStr) return '--:--';
+  try {
+    const date = new Date(timeStr);
+    if (isNaN(date.getTime())) {
+      if (typeof timeStr === 'string' && timeStr.includes(':')) {
+        return timeStr.slice(0, 5);
+      }
+      return '--:--';
+    }
+    return format(date, 'HH:mm');
+  } catch {
+    return '--:--';
+  }
+};
+
 function mapSessionLogs(logs) {
   if (!Array.isArray(logs)) return [];
   return logs.map((l) => ({
     building: l.buildingName || l.building || 'Bino',
-    entry: toHHMM(l.entryTime),
-    exit: l.exitTime ? toHHMM(l.exitTime) : null,
+    entry: formatLogTime(l.entryTime || l.entry_time),
+    exit: (l.exitTime || l.exit_time)
+      ? formatLogTime(l.exitTime || l.exit_time)
+      : null,
   }));
 }
 
@@ -185,7 +205,7 @@ function useGPSMonitor() {
   }, [processLocation]);
 
   useEffect(() => {
-    startSilentTracking();
+    startSilentTracking(apiClient);
     startWatching();
     // Ish vaqti o'zgarganda (minutiga bir marta tekshir)
     const tick = setInterval(() => {
@@ -344,9 +364,9 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
     if (!Array.isArray(workLogs)) return [];
     return workLogs.map(log => ({
       building: log.buildingName || log.building || 'Bino',
-      entry: toHHMM(log.entryTime || log.entry),
-      exit: (log.exitTime != null || log.exit != null)
-        ? toHHMM(log.exitTime ?? log.exit)
+      entry: formatLogTime(log.entryTime || log.entry_time || log.entry),
+      exit: (log.exitTime != null || log.exit_time != null || log.exit != null)
+        ? formatLogTime(log.exitTime ?? log.exit_time ?? log.exit)
         : null,
       dur: parseInt(log.durationSeconds ?? log.dur ?? 0),
     }));

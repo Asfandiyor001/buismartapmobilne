@@ -9,7 +9,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://impaired-guidance-inexpensive-april.trycloudflare.com"
+        "EXPO_PUBLIC_API_URL": "https://default-affiliated-examples-funeral.trycloudflare.com"
       }
     },
     "production": {
@@ -17,7 +17,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://impaired-guidance-inexpensive-april.trycloudflare.com"
+        "EXPO_PUBLIC_API_URL": "https://default-affiliated-examples-funeral.trycloudflare.com"
       }
     }
   }

@@ -157,7 +157,7 @@ export function watchLocation(callback, interval = 30000) {
   };
 }
 
-export async function startSilentTracking() {
+export async function startSilentTracking(apiClient) {
   if (Platform.OS === 'web') return false;
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -165,29 +165,79 @@ export async function startSilentTracking() {
 
     await Location.requestBackgroundPermissionsAsync().catch(() => {});
 
-    const running = await Location.hasStartedLocationUpdatesAsync(TASK).catch(() => false);
-    if (running) return true;
+    const isTaskDefined = TaskManager.isTaskDefined(TASK);
 
-    await Location.startLocationUpdatesAsync(TASK, {
-      accuracy: Location.Accuracy.Balanced,
-      timeInterval: INTERVAL,
-      distanceInterval: 15,
-      deferredUpdatesInterval: INTERVAL,
-      foregroundService: {
-        notificationTitle: 'BIU Smart',
-        notificationBody: 'Ish vaqti kuzatilmoqda',
-        notificationColor: '#028090',
-      },
-      showsBackgroundLocationIndicator: true,
-      pausesUpdatesAutomatically: false,
-    });
-    return true;
-  } catch {
+    if (isTaskDefined) {
+      try {
+        const running = await Location.hasStartedLocationUpdatesAsync(TASK);
+        if (!running) {
+          await Location.startLocationUpdatesAsync(TASK, {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 30000,
+            distanceInterval: 15,
+            foregroundService: {
+              notificationTitle: 'BIU Smart',
+              notificationBody: 'Ish vaqti kuzatilmoqda',
+              notificationColor: '#028090',
+            },
+            showsBackgroundLocationIndicator: true,
+            pausesUpdatesAutomatically: false,
+          });
+        }
+        return true;
+      } catch (bgError) {
+        console.log('Background tracking failed, using foreground:', bgError.message);
+      }
+    }
+
+    return startForegroundTracking(apiClient);
+  } catch (e) {
+    console.log('Tracking error:', e.message);
     return false;
   }
 }
 
+let foregroundInterval = null;
+
+export async function startForegroundTracking(apiClient) {
+  if (foregroundInterval) return true;
+
+  const sendPing = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const { latitude, longitude, accuracy } = location.coords;
+
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      if (nowMins < 450 || nowMins > 1050) return;
+
+      await apiClient.post('/work/ping', {
+        lat: latitude,
+        lon: longitude,
+        accuracy: accuracy || 10,
+      });
+    } catch {
+      /* silent fail */
+    }
+  };
+
+  sendPing();
+  foregroundInterval = setInterval(sendPing, 30000);
+  return true;
+}
+
 export async function stopSilentTracking() {
+  if (foregroundInterval) {
+    clearInterval(foregroundInterval);
+    foregroundInterval = null;
+  }
+
   if (Platform.OS === 'web') return;
   try {
     const running = await Location.hasStartedLocationUpdatesAsync(TASK);
