@@ -16,9 +16,23 @@ import {
   Building2, CheckCircle2, RefreshCw,
 } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, Spacing, Radius, Shadow } from '../../theme';
-import {
-  BUILDINGS, GPS_RADIUS, getDistance, detectBuilding, formatDist,
-} from '../../src/utils/buildings';
+
+let safeBuildings = [];
+let safeGetDistance = () => 0;
+let safeDetectBuilding = () => ({ inBuilding: null, nearest: null, minDist: Infinity });
+let safeFormatDist = (d) => `${d}m`;
+let safeGpsRadius = 100;
+
+try {
+  const utils = require('../../src/utils/buildings');
+  safeBuildings = utils.BUILDINGS || [];
+  safeGetDistance = utils.getDistance || safeGetDistance;
+  safeDetectBuilding = utils.detectBuilding || safeDetectBuilding;
+  safeFormatDist = utils.formatDist || safeFormatDist;
+  safeGpsRadius = utils.GPS_RADIUS != null ? utils.GPS_RADIUS : 100;
+} catch (e) {
+  console.error('Buildings import failed:', e?.message || String(e));
+}
 
 // ── Pulsing dot component ────────────────────────────────
 function PulseCircle({ color = Colors.secondary }) {
@@ -51,6 +65,9 @@ function PulseCircle({ color = Colors.secondary }) {
 
 // ═══════════════════════════════════════════════════════════
 export default function MapScreen({ navigation, route }) {
+  console.log('MapScreen: BUILDINGS count:', safeBuildings?.length);
+  console.log('MapScreen: GPS_RADIUS:', safeGpsRadius);
+
   const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
   const subRef = useRef(null);
@@ -66,12 +83,12 @@ export default function MapScreen({ navigation, route }) {
     setLocation({ latitude, longitude, accuracy });
 
     const dists = {};
-    BUILDINGS.forEach((b) => {
-      dists[b.id] = getDistance(latitude, longitude, b.latitude, b.longitude);
+    safeBuildings.forEach((b) => {
+      dists[b.id] = safeGetDistance(latitude, longitude, b.latitude, b.longitude);
     });
     setDistances(dists);
 
-    const { inBuilding } = detectBuilding(latitude, longitude);
+    const { inBuilding } = safeDetectBuilding(latitude, longitude);
     setNearBuilding(inBuilding);
   }, []);
 
@@ -121,8 +138,12 @@ export default function MapScreen({ navigation, route }) {
   }, [initMap]);
 
   // ── Barcha binolar orasidagi markaz ────────────────────
-  const centerLat = BUILDINGS.reduce((s, b) => s + b.latitude, 0) / BUILDINGS.length;
-  const centerLon = BUILDINGS.reduce((s, b) => s + b.longitude, 0) / BUILDINGS.length;
+  const centerLat = safeBuildings.length
+    ? safeBuildings.reduce((s, b) => s + b.latitude, 0) / safeBuildings.length
+    : 39.741066;
+  const centerLon = safeBuildings.length
+    ? safeBuildings.reduce((s, b) => s + b.longitude, 0) / safeBuildings.length
+    : 64.427637;
 
   const initialRegion = {
     latitude: centerLat,
@@ -136,8 +157,8 @@ export default function MapScreen({ navigation, route }) {
     ? 'GPS aniqlanmoqda...'
     : nearBuilding
       ? `${nearBuilding.short} da tasdiqlandi ✓`
-      : location && Object.keys(distances).length
-        ? `Eng yaqin: ${BUILDINGS.reduce((a, b) => (distances[a.id] < distances[b.id] ? a : b), BUILDINGS[0]).short} — ${formatDist(Math.min(...Object.values(distances)))}`
+      : location && Object.keys(distances).length && safeBuildings.length
+        ? `Eng yaqin: ${safeBuildings.reduce((a, b) => (distances[a.id] < distances[b.id] ? a : b), safeBuildings[0]).short} — ${safeFormatDist(Math.min(...Object.values(distances)))}`
         : 'Joylashuv aniqlanmadi';
 
   const statusColor = loading
@@ -173,11 +194,11 @@ export default function MapScreen({ navigation, route }) {
             mapType="standard"
           >
             {/* Binolar markerlari */}
-            {BUILDINGS.map((b) => (
+            {safeBuildings.map((b) => (
               <React.Fragment key={b.id}>
                 <Circle
                   center={{ latitude: b.latitude, longitude: b.longitude }}
-                  radius={GPS_RADIUS}
+                  radius={safeGpsRadius}
                   fillColor={b.color + '22'}
                   strokeColor={b.color + '88'}
                   strokeWidth={1.5}
@@ -253,9 +274,9 @@ export default function MapScreen({ navigation, route }) {
               )}
             </View>
 
-            {BUILDINGS.map((b) => {
+            {safeBuildings.map((b) => {
               const dist = distances[b.id];
-              const isNear = dist !== undefined && dist <= GPS_RADIUS;
+              const isNear = dist !== undefined && dist <= safeGpsRadius;
               const isClosest = dist !== undefined && Object.values(distances).every((d) => d >= dist);
               return (
                 <TouchableOpacity
@@ -283,7 +304,7 @@ export default function MapScreen({ navigation, route }) {
                       </View>
                       {dist !== undefined && (
                         <Text style={[st.buildingDist, { color: isNear ? b.color : Colors.textMuted }]}>
-                          {isNear ? '✓ Shu yerda' : `${formatDist(dist)} uzoqda`}
+                          {isNear ? '✓ Shu yerda' : `${safeFormatDist(dist)} uzoqda`}
                         </Text>
                       )}
                     </View>
@@ -303,10 +324,12 @@ export default function MapScreen({ navigation, route }) {
         </View>
       );
     } catch (e) {
+      console.error('MapScreen render error:', e);
+      console.error('Stack:', e?.stack);
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: '#64748B', fontSize: 14 }}>
-            Xarita yuklanmadi: {e?.message || String(e)}
+          <Text style={{ color: 'red', padding: 20, textAlign: 'center' }}>
+            {e?.message || 'Xarita xatosi'}
           </Text>
         </View>
       );

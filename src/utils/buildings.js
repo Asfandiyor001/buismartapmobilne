@@ -33,6 +33,9 @@ export const BUILDINGS = [
   },
 ];
 
+// Dev sanity: list must stay 3 public campuses (no "Admin uyi" in client bundle)
+console.log('[buildings.js] BUILDINGS count:', BUILDINGS.length);
+
 export const GPS_RADIUS = 100;
 
 export const WORK_START_H = 8;
