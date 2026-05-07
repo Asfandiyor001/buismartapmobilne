@@ -8,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSize, FontWeight, Spacing } from '../theme';
 import { useAuthStore } from '../src/store';
 import { startSilentTracking } from '../src/utils/location';
-import apiClient from '../src/api/client';
 
 const { width, height } = Dimensions.get('window');
 const useNativeDriver = Platform.OS !== 'web';
@@ -52,7 +51,7 @@ export default function SplashScreen({ navigation }) {
           return;
         }
         const user = useAuthStore.getState().user;
-        if (user?.role === 'staff') startSilentTracking(apiClient);
+        if (user?.role === 'staff') startSilentTracking();
         const isStaffHome = user?.role === 'staff' || user?.role === 'admin';
         navigation.replace(isStaffHome ? 'StaffHome' : 'StudentHome', { user });
       } else {

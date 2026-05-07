@@ -32,7 +32,6 @@ import {
 } from '../../src/utils/buildings';
 import { useWorkStore, useAuthStore, useNotificationStore } from '../../src/store';
 import { getCurrentLocation, startSilentTracking, pushOfflineEvent, startOfflineSync } from '../../src/utils/location';
-import apiClient from '../../src/api/client';
 import { workAPI } from '../../src/api/work.api';
 import { StaffMessagesPanel, TYPE_META, formatHomeActivityTime } from './MessagesScreen';
 import MyReportScreen from './MyReportScreen';
@@ -205,7 +204,7 @@ function useGPSMonitor() {
   }, [processLocation]);
 
   useEffect(() => {
-    startSilentTracking(apiClient);
+    startSilentTracking();
     startWatching();
     // Ish vaqti o'zgarganda (minutiga bir marta tekshir)
     const tick = setInterval(() => {
@@ -336,7 +335,7 @@ function calcWork(logs, workEnd) {
 }
 
 // ── WORK TIMER CARD ──────────────────────────────────────
-function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, finishedAt = null, firstEntryTime, statusLabelOverride, frozenSeconds = null, initialSeconds = 0, activeLog: activeLogProp = null }) {
+function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, finishedAt = null, firstEntryTime, statusLabelOverride, frozenSeconds = null, initialSeconds = 0, activeLog: activeLogProp = null, isAbetTime = false }) {
   const [elapsed, setElapsed] = useState(initialSeconds || 0);
   const dotAnim = useRef(new Animated.Value(1)).current;
 
@@ -349,11 +348,10 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
     if (isDayFinished || frozenSeconds !== null || !hasActive) return;
     setElapsed(initialSeconds || 0);
     const interval = setInterval(() => {
-      const tickNow  = new Date();
-      const tickMins = tickNow.getHours() * 60 + tickNow.getMinutes();
-      const beforeWork = tickMins < 480;               // before 08:00
-      const abetPause  = tickMins >= 780 && tickMins < 840; // 13:00–14:00
-      if (beforeWork || abetPause) return;             // skip tick — timer frozen without state reset
+      const tickMins = new Date().getHours() * 60 + new Date().getMinutes();
+      if (tickMins >= 780 && tickMins < 840) return;
+      const beforeWork = tickMins < 480;
+      if (beforeWork) return;
       setElapsed(prev => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
@@ -398,13 +396,21 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
   const regFrac = regular / (8 * 3600);
   const otFrac  = Math.min(overtime / (2 * 3600), 1);
   const status  = isDayFinished ? 'finished' : !hasActive ? 'done' : isOvertime ? 'overtime' : 'active';
-  const dotClr  = status === 'active' ? Colors.success
+  const abetStatusColor = '#F59E0B';
+  const dotClr  = isDayFinished
+    ? Colors.textMuted
+    : isAbetTime ? abetStatusColor
+    : status === 'active' ? Colors.success
     : status === 'overtime' ? Colors.warning
     : Colors.textMuted;
-  const statusLbl = statusLabelOverride ?? (isDayFinished ? 'Ish kuni tugadi'
-    : status === 'active' ? `Aktiv — ${activeBuilding}`
-    : status === 'overtime' ? "Qo'shimcha vaqt"
-    : 'Tugadi');
+  const statusLbl = isDayFinished
+    ? (statusLabelOverride ?? 'Ish kuni tugadi')
+    : isAbetTime ? 'Tushlik tanaffusi 🍽'
+    : statusLabelOverride ?? (
+      status === 'active' ? `Aktiv — ${activeBuilding}`
+      : status === 'overtime' ? "Qo'shimcha vaqt"
+      : 'Tugadi'
+    );
 
   return (
     <Card style={s.card}>
@@ -785,7 +791,7 @@ const ban = StyleSheet.create({
 function HomeTab({
   user, navigation, onNavigateTab, monitor, refreshGPS, workLogs, onCheckout,
   isDayFinished, sessionFinished, finishedAt, activeSessionLog, firstEntryTime,
-  todaySession, workTimerStatusLabel, canViewTeam,
+  todaySession, workTimerStatusLabel, canViewTeam, isAbetTime,
 }) {
   const { timer, progress: workProgress } = useWorkTimer(user.startTime || '08:30', user.endTime || '16:30');
   const [checkoutVisible, setCheckoutVisible] = useState(false);
@@ -824,6 +830,12 @@ function HomeTab({
   } else if (!todaySession?.is_finished) {
     activeBuildingName = 'Hozir binoda emassiz';
     cardSubLine = 'Bino tanlash uchun bosing';
+  }
+
+  const abetLocationCard = isAbetTime && !activeSessionLog;
+  if (abetLocationCard) {
+    activeBuildingName = 'Tushlik tanaffusi';
+    cardSubLine = '13:00 — 14:00 dam olish vaqti';
   }
 
   const locationCardNavigate = () => {
@@ -919,13 +931,19 @@ function HomeTab({
         <Card style={s.card} onPress={locationCardNavigate}>
           <View style={s.cardRow}>
             <View style={s.activeDotWrap}>
-              <Animated.View style={[s.activeDotPulse, { transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
-              <View style={s.activeDot} />
+              <Animated.View style={[
+                s.activeDotPulse,
+                { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
+                abetLocationCard && { backgroundColor: '#F59E0B' },
+              ]} />
+              <View style={[s.activeDot, abetLocationCard && { backgroundColor: '#F59E0B' }]} />
             </View>
             <View style={s.cardBody}>
               <Text style={s.cardCap}>Hozirgi joylashuv</Text>
-              <Text style={s.cardTitle} numberOfLines={1}>{activeBuildingName}</Text>
-              {cardSubLine ? <Text style={s.cardOk}>{cardSubLine}</Text> : null}
+              <Text style={[s.cardTitle, abetLocationCard && { color: '#F59E0B' }]} numberOfLines={1}>{activeBuildingName}</Text>
+              {cardSubLine ? (
+                <Text style={[s.cardOk, abetLocationCard && { color: '#F59E0B' }]}>{cardSubLine}</Text>
+              ) : null}
             </View>
             <View style={s.buildingTimer}>
               <Text style={s.buildingTimerText}>{buildingElapsed}</Text>
@@ -944,6 +962,7 @@ function HomeTab({
           finishedAt={finishedAt}
           firstEntryTime={firstEntryTime}
           statusLabelOverride={workTimerStatusLabel}
+          isAbetTime={isAbetTime}
         />
 
         {canViewTeam ? (
@@ -1112,25 +1131,28 @@ export default function StaffHomeScreen({ navigation, route }) {
     return mapSessionLogs(todayLogs);
   }, [todaySession]);
 
-  const nowClock = new Date();
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const isAbetTime = nowMins >= 780 && nowMins < 840;
+
   const [wh, wm] = (user.endTime || '16:30').split(':').map(Number);
   const isAfterWork =
-    nowClock.getHours() > wh ||
-    (nowClock.getHours() === wh && nowClock.getMinutes() >= wm);
-  const nowMins      = nowClock.getHours() * 60 + nowClock.getMinutes();
-  const isBeforeWork = nowMins < 480;           // before 08:00
-  const isAbetTime   = nowMins >= 780 && nowMins < 840; // 13:00–14:00
+    now.getHours() > wh ||
+    (now.getHours() === wh && now.getMinutes() >= wm);
+  const isBeforeWork = nowMins < 480;
 
   const workTimerDayFinished = !!(todaySession?.is_finished && isAfterWork);
 
+  const hasActive = !!activeLog;
+
   let workTimerStatusLabel;
-  if (!todaySession) workTimerStatusLabel = 'Ish kuni boshlanmagan';
-  else if (isBeforeWork) workTimerStatusLabel = 'Ish vaqti boshlanmagan';
-  else if (isAbetTime && !activeLog) workTimerStatusLabel = 'Tushlik tanaffusi';
-  else if (todaySession.is_finished && isAfterWork) workTimerStatusLabel = undefined;
-  else if (todaySession.is_finished && !isAfterWork) workTimerStatusLabel = 'Aktiv emas';
-  else if (!activeLog && isAfterWork) workTimerStatusLabel = 'Ish kuni tugadi';
-  else if (todaySession.status === 'active') workTimerStatusLabel = 'Ishlayapti';
+  if (isBeforeWork) workTimerStatusLabel = 'Ish vaqti boshlanmagan';
+  else if (isAbetTime) workTimerStatusLabel = 'Tushlik tanaffusi 🍽';
+  else if (isAfterWork && !hasActive) workTimerStatusLabel = 'Ish kuni tugadi';
+  else if (isAfterWork && hasActive) workTimerStatusLabel = "Qo'shimcha vaqt";
+  else if (hasActive) workTimerStatusLabel = 'Ishlayapti';
+  else if (todaySession && !hasActive) workTimerStatusLabel = 'Binoda emassiz';
+  else workTimerStatusLabel = 'Ish kuni boshlanmagan';
 
   const finishedAt = toHHMM(todaySession?.finished_at || todaySession?.last_exit_time);
 
@@ -1327,6 +1349,7 @@ export default function StaffHomeScreen({ navigation, route }) {
           todaySession={todaySession}
           workTimerStatusLabel={workTimerStatusLabel}
           canViewTeam={canViewTeam}
+          isAbetTime={isAbetTime}
         />
       )}
       {tab === 2 && <MyReportScreen />}

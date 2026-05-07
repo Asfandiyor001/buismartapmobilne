@@ -59,41 +59,37 @@ export function startOfflineSync() {
   });
 }
 
-// ─── Background GPS Task ──────────────────────────────────────────────────────
+// ─── Background GPS Task (module level; must register before UI) ──────────────
 
 if (Platform.OS !== 'web') {
   TaskManager.defineTask(TASK, async ({ data, error }) => {
     if (error || !data?.locations?.[0]) return;
 
-    // Only ping the server during the tracking window (07:30–17:30).
-    // 30-minute buffer before/after the 08:00–16:30 work day to capture early arrivals.
-    const _taskNow  = new Date();
-    const _taskMins = _taskNow.getHours() * 60 + _taskNow.getMinutes();
-    const TRACK_START = 7 * 60 + 30;  // 07:30
-    const TRACK_END   = 17 * 60 + 30; // 17:30
-    if (_taskMins < TRACK_START || _taskMins > TRACK_END) return;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    if (nowMins < 450 || nowMins > 1050) return;
 
     const { latitude, longitude, accuracy } = data.locations[0].coords;
-    const payload = {
-      type: 'ping',
-      lat: latitude,
-      lon: longitude,
-      accuracy,
-      timestamp: new Date().toISOString(),
-    };
 
     try {
-      const netState = await NetInfo.fetch();
-      if (!netState.isConnected) {
-        await pushOfflineEvent(payload);
-        return;
-      }
+      const AsyncStorageMod = require('@react-native-async-storage/async-storage').default;
+      const token = await AsyncStorageMod.getItem('biu_token');
+      if (!token) return;
 
-      const { default: apiClient } = await import('../api/client');
-      await apiClient.post('/work/ping', { lat: latitude, lon: longitude, accuracy });
+      const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+
+      await fetch(`${BASE_URL}/api/work/ping`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'cloudflare-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({ lat: latitude, lon: longitude, accuracy }),
+      });
     } catch {
-      // API call failed while online — queue for later sync
-      await pushOfflineEvent(payload);
+      /* silent fail */
     }
   });
 }
@@ -157,87 +153,87 @@ export function watchLocation(callback, interval = 30000) {
   };
 }
 
-export async function startSilentTracking(apiClient) {
+export async function startSilentTracking() {
   if (Platform.OS === 'web') return false;
   try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return false;
+    const { status: fg } = await Location.requestForegroundPermissionsAsync();
+    if (fg !== 'granted') return false;
 
-    await Location.requestBackgroundPermissionsAsync().catch(() => {});
+    await Location.requestBackgroundPermissionsAsync();
 
-    const isTaskDefined = TaskManager.isTaskDefined(TASK);
+    const isRunning = await Location.hasStartedLocationUpdatesAsync(TASK).catch(() => false);
+    if (isRunning) return true;
 
-    if (isTaskDefined) {
-      try {
-        const running = await Location.hasStartedLocationUpdatesAsync(TASK);
-        if (!running) {
-          await Location.startLocationUpdatesAsync(TASK, {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 30000,
-            distanceInterval: 15,
-            foregroundService: {
-              notificationTitle: 'BIU Smart',
-              notificationBody: 'Ish vaqti kuzatilmoqda',
-              notificationColor: '#028090',
-            },
-            showsBackgroundLocationIndicator: true,
-            pausesUpdatesAutomatically: false,
-          });
-        }
-        return true;
-      } catch (bgError) {
-        console.log('Background tracking failed, using foreground:', bgError.message);
-      }
-    }
+    await Location.startLocationUpdatesAsync(TASK, {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 30000,
+      distanceInterval: 20,
+      deferredUpdatesInterval: 30000,
+      showsBackgroundLocationIndicator: true,
+      pausesUpdatesAutomatically: false,
+      foregroundService: {
+        notificationTitle: 'BIU Smart',
+        notificationBody: 'Ish vaqti kuzatilmoqda',
+        notificationColor: '#028090',
+      },
+    });
 
-    return startForegroundTracking(apiClient);
+    console.log('Background GPS tracking started ✅');
+    return true;
   } catch (e) {
-    console.log('Tracking error:', e.message);
-    return false;
+    console.log('Background tracking failed:', e.message);
+    return startForegroundFallback();
   }
 }
 
-let foregroundInterval = null;
+let _interval = null;
 
-export async function startForegroundTracking(apiClient) {
-  if (foregroundInterval) return true;
+export async function startForegroundFallback() {
+  if (_interval) return true;
 
-  const sendPing = async () => {
+  const ping = async () => {
     try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const { latitude, longitude, accuracy } = location.coords;
-
       const now = new Date();
       const nowMins = now.getHours() * 60 + now.getMinutes();
       if (nowMins < 450 || nowMins > 1050) return;
 
-      await apiClient.post('/work/ping', {
-        lat: latitude,
-        lon: longitude,
-        accuracy: accuracy || 10,
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const AsyncStorageMod = require('@react-native-async-storage/async-storage').default;
+      const token = await AsyncStorageMod.getItem('biu_token');
+      if (!token) return;
+
+      const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+      await fetch(`${BASE_URL}/api/work/ping`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'cloudflare-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({
+          lat: loc.coords.latitude,
+          lon: loc.coords.longitude,
+          accuracy: loc.coords.accuracy,
+        }),
       });
     } catch {
-      /* silent fail */
+      /* silent */
     }
   };
 
-  sendPing();
-  foregroundInterval = setInterval(sendPing, 30000);
+  ping();
+  _interval = setInterval(ping, INTERVAL);
   return true;
 }
 
 export async function stopSilentTracking() {
-  if (foregroundInterval) {
-    clearInterval(foregroundInterval);
-    foregroundInterval = null;
+  if (_interval) {
+    clearInterval(_interval);
+    _interval = null;
   }
-
   if (Platform.OS === 'web') return;
   try {
     const running = await Location.hasStartedLocationUpdatesAsync(TASK);

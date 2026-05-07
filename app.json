@@ -44,7 +44,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "BIU Smart ish vaqtini avtomatik qayd etish uchun joylashuvga kirish kerak.",
+          "locationAlwaysAndWhenInUsePermission": "BIU Smart GPS orqali ish vaqtini kuzatadi.",
           "locationWhenInUsePermission": "BIU Smart ish vaqtini qayd etish uchun joylashuvga kirish kerak.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true

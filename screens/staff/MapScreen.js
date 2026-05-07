@@ -13,7 +13,7 @@ import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import {
   ArrowLeft, Navigation, Users, MapPin,
-  Building2, CheckCircle2, AlertTriangle, RefreshCw,
+  Building2, CheckCircle2, RefreshCw,
 } from 'lucide-react-native';
 import { Colors, FontSize, FontWeight, Spacing, Radius, Shadow } from '../../theme';
 import {
@@ -55,11 +55,11 @@ export default function MapScreen({ navigation, route }) {
   const mapRef = useRef(null);
   const subRef = useRef(null);
 
-  const [location,     setLocation]     = useState(null);
-  const [permError,    setPermError]    = useState(false);
-  const [loading,      setLoading]      = useState(true);
+  const [error, setError] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [nearBuilding, setNearBuilding] = useState(null);
-  const [distances,    setDistances]    = useState({});
+  const [distances, setDistances] = useState({});
 
   // ── Joylashuvni qayta ishlash ────────────────────────
   const processCoords = useCallback(({ latitude, longitude, accuracy }) => {
@@ -75,237 +75,245 @@ export default function MapScreen({ navigation, route }) {
     setNearBuilding(inBuilding);
   }, []);
 
-  // ── GPS kuzatishni boshlash ──────────────────────────
-  const startWatching = useCallback(async () => {
-    setLoading(true);
-    setPermError(false);
-
+  const initMap = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setPermError(true);
+        setError('GPS ruxsati berilmagan');
         setLoading(false);
         return;
       }
 
-      // Dastlab bir martalik aniqlik
+      setLoading(true);
+      setError(null);
+      subRef.current?.remove();
+
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       processCoords(loc.coords);
       mapRef.current?.animateToRegion({
-        latitude:       loc.coords.latitude,
-        longitude:      loc.coords.longitude,
-        latitudeDelta:  0.004,
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        latitudeDelta: 0.004,
         longitudeDelta: 0.005,
       }, 800);
 
-      // Doimiy kuzatish (15s / 10m)
-      subRef.current?.remove();
       subRef.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 15000, distanceInterval: 10 },
         (l) => processCoords(l.coords),
       );
-    } catch (error) {
-      console.log('Map init error:', error);
-      setPermError(true);
+    } catch (e) {
+      setError('Xarita yuklanmadi: ' + (e?.message || String(e)));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [processCoords]);
 
   useEffect(() => {
-    startWatching();
-    return () => { subRef.current?.remove(); };
-  }, []);
+    initMap();
+    return () => {
+      try {
+        subRef.current?.remove();
+      } catch {
+        /* */
+      }
+      subRef.current = null;
+    };
+  }, [initMap]);
 
   // ── Barcha binolar orasidagi markaz ────────────────────
-  const centerLat = BUILDINGS.reduce((s, b) => s + b.latitude,  0) / BUILDINGS.length;
+  const centerLat = BUILDINGS.reduce((s, b) => s + b.latitude, 0) / BUILDINGS.length;
   const centerLon = BUILDINGS.reduce((s, b) => s + b.longitude, 0) / BUILDINGS.length;
 
   const initialRegion = {
-    latitude:       centerLat,
-    longitude:      centerLon,
-    latitudeDelta:  0.005,
+    latitude: centerLat,
+    longitude: centerLon,
+    latitudeDelta: 0.005,
     longitudeDelta: 0.007,
   };
 
   // ── Status matnlari ────────────────────────────────────
   const statusText = loading
     ? 'GPS aniqlanmoqda...'
-    : permError
-    ? 'GPS ruxsat berilmadi'
     : nearBuilding
-    ? `${nearBuilding.short} da tasdiqlandi ✓`
-    : location && Object.keys(distances).length
-    ? `Eng yaqin: ${BUILDINGS.reduce((a, b) => (distances[a.id] < distances[b.id] ? a : b), BUILDINGS[0]).short} — ${formatDist(Math.min(...Object.values(distances)))}`
-    : 'Joylashuv aniqlanmadi';
+      ? `${nearBuilding.short} da tasdiqlandi ✓`
+      : location && Object.keys(distances).length
+        ? `Eng yaqin: ${BUILDINGS.reduce((a, b) => (distances[a.id] < distances[b.id] ? a : b), BUILDINGS[0]).short} — ${formatDist(Math.min(...Object.values(distances)))}`
+        : 'Joylashuv aniqlanmadi';
 
   const statusColor = loading
     ? Colors.textMuted
-    : permError
-    ? Colors.danger
     : nearBuilding
-    ? Colors.success
-    : Colors.warning;
+      ? Colors.success
+      : Colors.warning;
 
-  return (
-    <View style={st.root}>
-      <StatusBar style="dark" />
-
-      {/* MAP */}
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        provider={PROVIDER_DEFAULT}
-        initialRegion={initialRegion}
-        showsUserLocation={!!location}
-        showsMyLocationButton={false}
-        showsCompass={true}
-        showsScale={true}
-        mapType="standard"
-      >
-        {/* Binolar markerlari */}
-        {BUILDINGS.map((b) => (
-          <React.Fragment key={b.id}>
-            {/* Radius doirasi */}
-            <Circle
-              center={{ latitude: b.latitude, longitude: b.longitude }}
-              radius={GPS_RADIUS}
-              fillColor={b.color + '22'}
-              strokeColor={b.color + '88'}
-              strokeWidth={1.5}
-            />
-            {/* Bino markeri */}
-            <Marker
-              coordinate={{ latitude: b.latitude, longitude: b.longitude }}
-              title={b.name}
-              description={b.desc}
-            >
-              <View style={[st.markerWrap, { borderColor: b.color }]}>
-                <View style={[st.markerInner, { backgroundColor: b.color }]}>
-                  <Building2 size={16} color={Colors.white} strokeWidth={2.5} />
-                </View>
-                <View style={[st.markerTail, { borderTopColor: b.color }]} />
-              </View>
-            </Marker>
-          </React.Fragment>
-        ))}
-      </MapView>
-
-      {/* Loading overlay */}
-      {loading && (
-        <View style={st.loadingOverlay}>
-          <View style={st.loadingBox}>
-            <ActivityIndicator color={Colors.secondary} size="large" />
-            <Text style={st.loadingTxt}>GPS aniqlanmoqda...</Text>
-          </View>
-        </View>
-      )}
-
-      {/* ORQAGA TUGMA */}
-      <TouchableOpacity
-        style={[st.backBtn, { top: insets.top + 12 }, Shadow.card]}
-        onPress={() => navigation?.goBack()}
-      >
-        <ArrowLeft size={20} color={Colors.textPrimary} strokeWidth={2.5} />
-      </TouchableOpacity>
-
-      {/* JOYLASHUV KARTOCHKASI — yuqori */}
-      <View style={[st.topCard, { top: insets.top + 12 }, Shadow.modal]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <Navigation size={13} color={statusColor} strokeWidth={2.5} />
-          <Text style={[st.topCaption, { color: statusColor }]}>
-            {loading ? 'Joylashuv aniqlanmoqda' : permError ? 'Ruxsat kerak' : 'Hozirgi joylashuvingiz'}
-          </Text>
-        </View>
-        <Text style={st.topTitle} numberOfLines={1}>{statusText}</Text>
-        {location && !loading && (
-          <Text style={st.topAccuracy}>
-            ± {Math.round(location.accuracy || 5)} m aniqlik  •  {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-          </Text>
-        )}
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#64748B', fontSize: 14 }}>{error}</Text>
       </View>
+    );
+  }
 
-      {/* YANGILASH TUGMASI */}
-      <TouchableOpacity
-        style={[st.refreshBtn, { top: insets.top + 12 }, Shadow.card]}
-        onPress={startWatching}
-        disabled={loading}
-      >
-        {loading
-          ? <ActivityIndicator color={Colors.secondary} size="small" />
-          : <RefreshCw size={18} color={Colors.secondary} strokeWidth={2.5} />
-        }
-      </TouchableOpacity>
+  const renderScreen = () => {
+    try {
+      return (
+        <View style={st.root}>
+          <StatusBar style="dark" />
 
-      {/* QUYI KARTOCHKA — binolar ro'yxati */}
-      <View style={[st.bottomCard, { bottom: insets.bottom + 16 }, Shadow.modal]}>
-        <View style={st.bottomHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <MapPin size={16} color={Colors.secondary} strokeWidth={2} />
-            <Text style={st.bottomTitle}>BIU Binolari</Text>
-          </View>
-          {nearBuilding && (
-            <View style={st.verifiedBadge}>
-              <CheckCircle2 size={12} color={Colors.success} strokeWidth={2.5} />
-              <Text style={st.verifiedTxt}>Tasdiqlangan</Text>
+          {/* MAP */}
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFill}
+            provider={PROVIDER_DEFAULT}
+            initialRegion={initialRegion}
+            showsUserLocation={!!location}
+            showsMyLocationButton={false}
+            showsCompass={true}
+            showsScale={true}
+            mapType="standard"
+          >
+            {/* Binolar markerlari */}
+            {BUILDINGS.map((b) => (
+              <React.Fragment key={b.id}>
+                <Circle
+                  center={{ latitude: b.latitude, longitude: b.longitude }}
+                  radius={GPS_RADIUS}
+                  fillColor={b.color + '22'}
+                  strokeColor={b.color + '88'}
+                  strokeWidth={1.5}
+                />
+                <Marker
+                  coordinate={{ latitude: b.latitude, longitude: b.longitude }}
+                  title={b.name}
+                  description={b.desc}
+                >
+                  <View style={[st.markerWrap, { borderColor: b.color }]}>
+                    <View style={[st.markerInner, { backgroundColor: b.color }]}>
+                      <Building2 size={16} color={Colors.white} strokeWidth={2.5} />
+                    </View>
+                    <View style={[st.markerTail, { borderTopColor: b.color }]} />
+                  </View>
+                </Marker>
+              </React.Fragment>
+            ))}
+          </MapView>
+
+          {loading && (
+            <View style={st.loadingOverlay}>
+              <View style={st.loadingBox}>
+                <ActivityIndicator color={Colors.secondary} size="large" />
+                <Text style={st.loadingTxt}>GPS aniqlanmoqda...</Text>
+              </View>
             </View>
           )}
-        </View>
 
-        {/* Bino qatorlari */}
-        {BUILDINGS.map((b) => {
-          const dist    = distances[b.id];
-          const isNear  = dist !== undefined && dist <= GPS_RADIUS;
-          const isClosest = dist !== undefined && Object.values(distances).every(d => d >= dist);
-          return (
-            <TouchableOpacity
-              key={b.id}
-              style={[st.buildingRow, isNear && { backgroundColor: b.color + '10', borderColor: b.color }]}
-              activeOpacity={0.8}
-              onPress={() => {
-                mapRef.current?.animateToRegion({
-                  latitude: b.latitude, longitude: b.longitude,
-                  latitudeDelta: 0.002, longitudeDelta: 0.002,
-                }, 600);
-              }}
-            >
-              <View style={[st.buildingDot, { backgroundColor: b.color }]}>
-                <Building2 size={14} color={Colors.white} strokeWidth={2.5} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[st.buildingName, isNear && { color: b.color }]}>{b.name}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    <Users size={11} color={Colors.success} strokeWidth={2} />
-                    <Text style={st.buildingCount}>{b.staffCount} xodim</Text>
-                  </View>
-                  {dist !== undefined && (
-                    <Text style={[st.buildingDist, { color: isNear ? b.color : Colors.textMuted }]}>
-                      {isNear ? '✓ Shu yerda' : formatDist(dist) + ' uzoqda'}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              {isNear && (
-                <CheckCircle2 size={18} color={b.color} strokeWidth={2.5} />
-              )}
-              {!isNear && isClosest && !loading && location && (
-                <View style={[st.closestBadge, { backgroundColor: b.color + '15' }]}>
-                  <Text style={[st.closestTxt, { color: b.color }]}>Yaqin</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+          <TouchableOpacity
+            style={[st.backBtn, { top: insets.top + 12 }, Shadow.card]}
+            onPress={() => navigation?.goBack()}
+          >
+            <ArrowLeft size={20} color={Colors.textPrimary} strokeWidth={2.5} />
+          </TouchableOpacity>
 
-        {permError && (
-          <View style={st.errorRow}>
-            <AlertTriangle size={16} color={Colors.danger} strokeWidth={2} />
-            <Text style={st.errorTxt}>GPS ruxsati kerak. Sozlamalarda yoqing.</Text>
+          <View style={[st.topCard, { top: insets.top + 12 }, Shadow.modal]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <Navigation size={13} color={statusColor} strokeWidth={2.5} />
+              <Text style={[st.topCaption, { color: statusColor }]}>
+                {loading ? 'Joylashuv aniqlanmoqda' : 'Hozirgi joylashuvingiz'}
+              </Text>
+            </View>
+            <Text style={st.topTitle} numberOfLines={1}>{statusText}</Text>
+            {location && !loading && (
+              <Text style={st.topAccuracy}>
+                ± {Math.round(location.accuracy || 5)} m aniqlik  •  {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+              </Text>
+            )}
           </View>
-        )}
-      </View>
-    </View>
-  );
+
+          <TouchableOpacity
+            style={[st.refreshBtn, { top: insets.top + 12 }, Shadow.card]}
+            onPress={initMap}
+            disabled={loading}
+          >
+            {loading
+              ? <ActivityIndicator color={Colors.secondary} size="small" />
+              : <RefreshCw size={18} color={Colors.secondary} strokeWidth={2.5} />}
+          </TouchableOpacity>
+
+          <View style={[st.bottomCard, { bottom: insets.bottom + 16 }, Shadow.modal]}>
+            <View style={st.bottomHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MapPin size={16} color={Colors.secondary} strokeWidth={2} />
+                <Text style={st.bottomTitle}>BIU Binolari</Text>
+              </View>
+              {nearBuilding && (
+                <View style={st.verifiedBadge}>
+                  <CheckCircle2 size={12} color={Colors.success} strokeWidth={2.5} />
+                  <Text style={st.verifiedTxt}>Tasdiqlangan</Text>
+                </View>
+              )}
+            </View>
+
+            {BUILDINGS.map((b) => {
+              const dist = distances[b.id];
+              const isNear = dist !== undefined && dist <= GPS_RADIUS;
+              const isClosest = dist !== undefined && Object.values(distances).every((d) => d >= dist);
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  style={[st.buildingRow, isNear && { backgroundColor: b.color + '10', borderColor: b.color }]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    mapRef.current?.animateToRegion({
+                      latitude: b.latitude,
+                      longitude: b.longitude,
+                      latitudeDelta: 0.002,
+                      longitudeDelta: 0.002,
+                    }, 600);
+                  }}
+                >
+                  <View style={[st.buildingDot, { backgroundColor: b.color }]}>
+                    <Building2 size={14} color={Colors.white} strokeWidth={2.5} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[st.buildingName, isNear && { color: b.color }]}>{b.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Users size={11} color={Colors.success} strokeWidth={2} />
+                        <Text style={st.buildingCount}>{b.staffCount} xodim</Text>
+                      </View>
+                      {dist !== undefined && (
+                        <Text style={[st.buildingDist, { color: isNear ? b.color : Colors.textMuted }]}>
+                          {isNear ? '✓ Shu yerda' : `${formatDist(dist)} uzoqda`}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  {isNear && (
+                    <CheckCircle2 size={18} color={b.color} strokeWidth={2.5} />
+                  )}
+                  {!isNear && isClosest && !loading && location && (
+                    <View style={[st.closestBadge, { backgroundColor: b.color + '15' }]}>
+                      <Text style={[st.closestTxt, { color: b.color }]}>Yaqin</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      );
+    } catch (e) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#64748B', fontSize: 14 }}>
+            Xarita yuklanmadi: {e?.message || String(e)}
+          </Text>
+        </View>
+      );
+    }
+  };
+
+  return renderScreen();
 }
 
 const st = StyleSheet.create({
@@ -336,9 +344,6 @@ const st = StyleSheet.create({
   buildingDist: { fontSize: FontSize.xs, fontWeight: FontWeight.medium },
   closestBadge: { borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 2 },
   closestTxt:   { fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
-
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.dangerTint, borderRadius: Radius.sm, padding: Spacing.sm, marginTop: Spacing.sm },
-  errorTxt: { flex: 1, fontSize: FontSize.sm, color: Colors.danger },
 
   markerWrap:  { alignItems: 'center' },
   markerInner: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.white, ...Shadow.card },
