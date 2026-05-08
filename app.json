@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "BIU Smart",
-    "slug": "biu-smart",
+    "slug": "biu-smartone",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -56,14 +56,15 @@
           "cameraPermission": "QR kod skanerlash uchun kamera kerak."
         }
       ],
-      "expo-local-authentication"
+      "expo-local-authentication",
+      "expo-web-browser"
     ],
     "experiments": {
       "reactCompiler": true
     },
     "extra": {
       "eas": {
-        "projectId": "a03d4313-d9dc-4684-9b22-a8dc7719c298"
+        "projectId": "34ea31d6-1531-47a9-abce-da656fcc3e8c"
       }
     }
   }
