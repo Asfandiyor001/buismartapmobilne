@@ -5,9 +5,9 @@ export const reportAPI = {
   fetchMyReport: () =>
     apiClient.get('/staff/my-report').then((r) => r.data.data),
 
-  /** Tanlangan oy uchun hisobot: /report/monthly?year=&month= */
+  /** Tanlangan oy uchun hisobot: GET /api/reports/monthly?year=&month= */
   fetchMonthlyReport: (year, month) =>
     apiClient
-      .get('/report/monthly', { params: { year, month } })
+      .get('/reports/monthly', { params: { year, month } })
       .then((r) => r.data.data),
 };

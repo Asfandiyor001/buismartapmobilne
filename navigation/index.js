@@ -14,6 +14,7 @@ import BuildingSelectScreen from '../screens/staff/BuildingSelectScreen';
 import MapScreen            from '../screens/staff/MapScreen';
 import AbetScreen           from '../screens/staff/AbetScreen';
 import TeamScreen           from '../screens/staff/TeamScreen';
+import MyReportScreen       from '../screens/staff/MyReportScreen';
 import StudentHomeScreen    from '../screens/student/StudentHomeScreen';
 import QRScannerScreen      from '../screens/student/QRScannerScreen';
 import ScheduleScreen       from '../screens/student/ScheduleScreen';
@@ -67,6 +68,7 @@ export default function AppNavigation() {
           }}
         />
         <Stack.Screen name="Abet" component={AbetScreen} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+        <Stack.Screen name="Report" component={MyReportScreen} options={{ headerShown: false }} />
 
         {/* Student */}
         <Stack.Screen name="StudentHome"   component={StudentHomeScreen} />

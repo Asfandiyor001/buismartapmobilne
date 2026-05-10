@@ -88,8 +88,16 @@ const nowTime = () => {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-function useWorkTimer(startTime = '08:30', endTime = '16:30') {
+function useWorkTimer(startTime = '08:30', endTime = '16:30', isWeekend = false) {
   const calc = () => {
+    if (isWeekend) {
+      const [sh, sm] = startTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
+      const startSec = sh * 3600 + sm * 60;
+      const endSec = eh * 3600 + em * 60;
+      const totalSec = Math.max(1, endSec - startSec);
+      return { elapsed: 0, totalSec };
+    }
     const now = new Date();
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
@@ -102,9 +110,10 @@ function useWorkTimer(startTime = '08:30', endTime = '16:30') {
   };
   const [state, setState] = useState(calc);
   useEffect(() => {
+    if (isWeekend) return undefined;
     const t = setInterval(() => setState(calc()), 1000);
     return () => clearInterval(t);
-  }, [startTime, endTime]);
+  }, [startTime, endTime, isWeekend]);
   const { elapsed, totalSec } = state;
   const timer    = `${pad(Math.floor(elapsed / 3600))}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}`;
   const progress = elapsed / totalSec;
@@ -150,10 +159,12 @@ function useGPSMonitor() {
       isWorkTime:  work,
     });
 
-    // Silent server geofencing: every location sample is stored; no UI / notifications.
-    workAPI
-      .ping(coords.latitude, coords.longitude, coords.accuracy ?? null)
-      .catch(() => {});
+    // Silent server geofencing (Yakshanba — ping yo'q)
+    if (new Date().getDay() !== 0) {
+      workAPI
+        .ping(coords.latitude, coords.longitude, coords.accuracy ?? null)
+        .catch(() => {});
+    }
   }, []);
 
   const startWatching = useCallback(async () => {
@@ -335,7 +346,7 @@ function calcWork(logs, workEnd) {
 }
 
 // ── WORK TIMER CARD ──────────────────────────────────────
-function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, finishedAt = null, firstEntryTime, statusLabelOverride, frozenSeconds = null, initialSeconds = 0, activeLog: activeLogProp = null, isAbetTime = false }) {
+function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, finishedAt = null, firstEntryTime, statusLabelOverride, frozenSeconds = null, initialSeconds = 0, activeLog: activeLogProp = null, isAbetTime = false, isWeekend = false }) {
   const [elapsed, setElapsed] = useState(initialSeconds || 0);
   const dotAnim = useRef(new Animated.Value(1)).current;
 
@@ -345,6 +356,7 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
   // Start timer from server-provided liveTotal and tick up every second.
   // Freeze when day is finished, frozen override is set, or staff is not actively in a building.
   useEffect(() => {
+    if (isWeekend) return;
     if (isDayFinished || frozenSeconds !== null || !hasActive) return;
     setElapsed(initialSeconds || 0);
     const interval = setInterval(() => {
@@ -355,7 +367,7 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
       setElapsed(prev => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
-  }, [initialSeconds, isDayFinished, frozenSeconds, hasActive]);
+  }, [initialSeconds, isDayFinished, frozenSeconds, hasActive, isWeekend]);
 
   // Compute timeline rows from raw API logs (supports both old mapped and new raw format)
   const rows = useMemo(() => {
@@ -371,7 +383,7 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
   }, [workLogs]);
 
   useEffect(() => {
-    if (!hasActive || isDayFinished) { dotAnim.setValue(1); return; }
+    if (isWeekend || !hasActive || isDayFinished) { dotAnim.setValue(1); return; }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(dotAnim, { toValue: 0.2, duration: 650, useNativeDriver: NATIVE_DRIVER }),
@@ -380,30 +392,35 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
     );
     loop.start();
     return () => loop.stop();
-  }, [hasActive, isDayFinished]);
+  }, [hasActive, isDayFinished, isWeekend]);
 
   const nowCheck = new Date();
   const workEndDate = new Date();
   workEndDate.setHours(16, 30, 0, 0);
   const isOT = nowCheck > workEndDate;
 
-  const total    = frozenSeconds !== null ? frozenSeconds : elapsed;
+  const total    = isWeekend ? 0 : (frozenSeconds !== null ? frozenSeconds : elapsed);
   const regular  = Math.min(total, 8 * 3600);
   // Overtime only counts when staff is actively inside a building AND after work-end time
-  const overtime = isOT && hasActive ? Math.max(0, total - 8 * 3600) : 0;
-  const isOvertime = isOT && hasActive;
+  const overtime = isWeekend ? 0 : (isOT && hasActive ? Math.max(0, total - 8 * 3600) : 0);
+  const isOvertime = !isWeekend && isOT && hasActive;
 
-  const regFrac = regular / (8 * 3600);
-  const otFrac  = Math.min(overtime / (2 * 3600), 1);
-  const status  = isDayFinished ? 'finished' : !hasActive ? 'done' : isOvertime ? 'overtime' : 'active';
+  const regFrac = isWeekend ? 0 : regular / (8 * 3600);
+  const otFrac  = isWeekend ? 0 : Math.min(overtime / (2 * 3600), 1);
+  const status  = isWeekend ? 'weekend' : isDayFinished ? 'finished' : !hasActive ? 'done' : isOvertime ? 'overtime' : 'active';
   const abetStatusColor = '#F59E0B';
-  const dotClr  = isDayFinished
+  const weekendGray = '#64748B';
+  const dotClr  = isWeekend
+    ? weekendGray
+    : isDayFinished
     ? Colors.textMuted
     : isAbetTime ? abetStatusColor
     : status === 'active' ? Colors.success
     : status === 'overtime' ? Colors.warning
     : Colors.textMuted;
-  const statusLbl = isDayFinished
+  const statusLbl = isWeekend
+    ? 'Dam olish kuni 🌟'
+    : isDayFinished
     ? (statusLabelOverride ?? 'Ish kuni tugadi')
     : isAbetTime ? 'Tushlik tanaffusi 🍽'
     : statusLabelOverride ?? (
@@ -424,18 +441,18 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
           </Text>
         </View>
         <View style={{ flexDirection:'row', alignItems:'center', gap:5 }}>
-          <Animated.View style={[wt.dot, { backgroundColor: dotClr, opacity: (status === 'done' || isDayFinished) ? 1 : dotAnim }]} />
+          <Animated.View style={[wt.dot, { backgroundColor: dotClr, opacity: (isWeekend || status === 'done' || isDayFinished) ? 1 : dotAnim }]} />
           <Text style={[wt.statusLbl, { color: dotClr }]}>{statusLbl}</Text>
         </View>
       </View>
 
       {/* 2 — Counters */}
-      <View style={wt.counters}>
+        <View style={wt.counters}>
         <View style={wt.cBox}>
-          <Text style={[wt.cVal, { color: Colors.secondary }]}>{hhmmss(regular)}</Text>
-          <Text style={[wt.cLbl, { color: Colors.secondary }]}>Ish vaqti</Text>
+          <Text style={[wt.cVal, { color: isWeekend ? weekendGray : Colors.secondary }]}>{hhmmss(regular)}</Text>
+          <Text style={[wt.cLbl, { color: isWeekend ? weekendGray : Colors.secondary }]}>Ish vaqti</Text>
         </View>
-        {overtime > 0 && (
+        {!isWeekend && overtime > 0 && (
           <>
             <View style={wt.cDiv} />
             <View style={wt.cBox}>
@@ -495,7 +512,7 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
       </View>
 
       {/* 6 — Day finished summary card */}
-      {isDayFinished && (
+      {isDayFinished && !isWeekend && (
         <View style={wt.summaryCard}>
           <Text style={wt.summaryTitle}>🏁 Bugungi ish yakunlandi</Text>
           <View style={wt.summaryRow}>
@@ -793,7 +810,10 @@ function HomeTab({
   isDayFinished, sessionFinished, finishedAt, activeSessionLog, firstEntryTime,
   todaySession, workTimerStatusLabel, canViewTeam, isAbetTime,
 }) {
-  const { timer, progress: workProgress } = useWorkTimer(user.startTime || '08:30', user.endTime || '16:30');
+  const dayOfWeek = new Date().getDay();
+  const isWeekend = dayOfWeek === 0;
+
+  const { timer, progress: workProgress } = useWorkTimer(user.startTime || '08:30', user.endTime || '16:30', isWeekend);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [settingsModal,   setSettingsModal]   = useState(false);
 
@@ -832,13 +852,19 @@ function HomeTab({
     cardSubLine = 'Bino tanlash uchun bosing';
   }
 
-  const abetLocationCard = isAbetTime && !activeSessionLog;
+  if (isWeekend) {
+    activeBuildingName = 'Bugun dam olish kuni';
+    cardSubLine = 'Yakshanba — ish kuni emas';
+  }
+
+  const abetLocationCard = !isWeekend && isAbetTime && !activeSessionLog;
   if (abetLocationCard) {
     activeBuildingName = 'Tushlik tanaffusi';
     cardSubLine = '13:00 — 14:00 dam olish vaqti';
   }
 
   const locationCardNavigate = () => {
+    if (isWeekend) return;
     if (!activeSessionLog && todaySession && !todaySession?.is_finished) {
       navigation?.navigate('BuildingSelect');
       return;
@@ -851,7 +877,7 @@ function HomeTab({
   const pulseOpacity = useRef(new Animated.Value(0.6)).current;
 
   useEffect(() => {
-    if (!activeWorkRow) return;
+    if (isWeekend || !activeWorkRow) return;
     const t = setInterval(() => {
       const [h, m] = activeWorkRow.entry.split(':').map(Number);
       const entry  = new Date();
@@ -862,10 +888,10 @@ function HomeTab({
       setBuildingElapsed(bh > 0 ? `${bh}s ${bm}d` : `${bm}d`);
     }, 1000);
     return () => clearInterval(t);
-  }, [activeWorkRow?.entry]);
+  }, [activeWorkRow?.entry, isWeekend]);
 
   useEffect(() => {
-    if (!activeWorkRow) return;
+    if (isWeekend || !activeWorkRow) return;
     Animated.loop(
       Animated.parallel([
         Animated.sequence([
@@ -878,7 +904,7 @@ function HomeTab({
         ]),
       ])
     ).start();
-  }, [activeWorkRow]);
+  }, [activeWorkRow, isWeekend]);
 
   // Joylashuv kartochkasi uchun dinamik
   const isScanning  = monitor.status === 'scanning';
@@ -900,8 +926,8 @@ function HomeTab({
   const locSubColor = isVerified ? Colors.success : isOutside ? Colors.danger : Colors.textMuted;
 
   const ACTIONS = [
-    { key:'building', label:"Bino o'zgartir",  Icon:Building2,    bg:Colors.primaryTint,                                 color:Colors.secondary,                              onPress:() => navigation?.navigate('BuildingSelect'), disabled:false },
-    { key:'checkout', label:'Chiqish qayd',     Icon:CheckCircle2, bg:sessionFinished ? Colors.borderLight : Colors.dangerTint, color:sessionFinished ? Colors.textMuted : Colors.danger, onPress:sessionFinished ? undefined : onCheckout,       disabled:sessionFinished },
+    { key:'building', label:"Bino o'zgartir",  Icon:Building2,    bg:Colors.primaryTint,                                 color:isWeekend ? Colors.textMuted : Colors.secondary,                              onPress:isWeekend ? undefined : () => navigation?.navigate('BuildingSelect'), disabled:isWeekend },
+    { key:'checkout', label:'Chiqish qayd',     Icon:CheckCircle2, bg:(sessionFinished || isWeekend) ? Colors.borderLight : Colors.dangerTint, color:(sessionFinished || isWeekend) ? Colors.textMuted : Colors.danger, onPress:(sessionFinished || isWeekend) ? undefined : onCheckout,       disabled:sessionFinished || isWeekend },
     { key:'report',   label:'Hisobotim',        Icon:BarChart2,    bg:Colors.successTint,                                color:Colors.success,                                onPress:() => onNavigateTab(2),                       disabled:false },
     { key:'settings', label:'Sozlamalar',       Icon:Settings,     bg:Colors.purpleTint,                                 color:Colors.purple,                                 onPress:() => setSettingsModal(true),                 disabled:false },
   ];
@@ -928,25 +954,54 @@ function HomeTab({
         <SectionHeader title="Bugungi holat" />
 
         {/* Joylashuv kartochkasi — aktiv bino */}
-        <Card style={s.card} onPress={locationCardNavigate}>
+        <Card
+          style={[
+            s.card,
+            isWeekend && { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+          ]}
+          onPress={isWeekend ? undefined : locationCardNavigate}
+        >
           <View style={s.cardRow}>
             <View style={s.activeDotWrap}>
               <Animated.View style={[
                 s.activeDotPulse,
-                { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
+                isWeekend
+                  ? { opacity: 0, transform: [{ scale: 1 }] }
+                  : { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
                 abetLocationCard && { backgroundColor: '#F59E0B' },
               ]} />
-              <View style={[s.activeDot, abetLocationCard && { backgroundColor: '#F59E0B' }]} />
+              <View style={[
+                s.activeDot,
+                abetLocationCard && { backgroundColor: '#F59E0B' },
+                isWeekend && { backgroundColor: '#64748B' },
+              ]} />
             </View>
             <View style={s.cardBody}>
               <Text style={s.cardCap}>Hozirgi joylashuv</Text>
-              <Text style={[s.cardTitle, abetLocationCard && { color: '#F59E0B' }]} numberOfLines={1}>{activeBuildingName}</Text>
+              <Text
+                style={[
+                  s.cardTitle,
+                  isWeekend && { color: '#64748B' },
+                  abetLocationCard && { color: '#F59E0B' },
+                ]}
+                numberOfLines={1}
+              >
+                {activeBuildingName}
+              </Text>
               {cardSubLine ? (
-                <Text style={[s.cardOk, abetLocationCard && { color: '#F59E0B' }]}>{cardSubLine}</Text>
+                <Text
+                  style={[
+                    s.cardOk,
+                    isWeekend && { color: '#64748B' },
+                    abetLocationCard && { color: '#F59E0B' },
+                  ]}
+                >
+                  {cardSubLine}
+                </Text>
               ) : null}
             </View>
             <View style={s.buildingTimer}>
-              <Text style={s.buildingTimerText}>{buildingElapsed}</Text>
+              <Text style={[s.buildingTimerText, isWeekend && { color: '#64748B' }]}>{buildingElapsed}</Text>
               <Text style={s.buildingTimerLabel}>bu binoda</Text>
             </View>
           </View>
@@ -954,8 +1009,9 @@ function HomeTab({
 
         {/* Ish vaqti taymer */}
         <WorkTimerCard
-          frozenSeconds={todaySession?.is_finished ? liveTotal : null}
-          initialSeconds={liveTotal}
+          isWeekend={isWeekend}
+          frozenSeconds={isWeekend ? 0 : (todaySession?.is_finished ? liveTotal : null)}
+          initialSeconds={isWeekend ? 0 : liveTotal}
           workLogs={todaySession?.logs ?? []}
           activeLog={todaySession?.activeLog}
           isDayFinished={isDayFinished}
@@ -1013,6 +1069,11 @@ function HomeTab({
             </TouchableOpacity>
           ))}
         </View>
+        {isWeekend ? (
+          <Text style={{ textAlign: 'center', color: '#64748B', fontSize: FontSize.sm, fontWeight: FontWeight.semibold, marginBottom: 16 }}>
+            Yakshanba — dam oling! 🌟
+          </Text>
+        ) : null}
 
         <SectionHeader
           title="Oxirgi faoliyat"
@@ -1133,6 +1194,7 @@ export default function StaffHomeScreen({ navigation, route }) {
 
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
+  const isWeekend = now.getDay() === 0;
   const isAbetTime = nowMins >= 780 && nowMins < 840;
 
   const [wh, wm] = (user.endTime || '16:30').split(':').map(Number);
@@ -1141,12 +1203,15 @@ export default function StaffHomeScreen({ navigation, route }) {
     (now.getHours() === wh && now.getMinutes() >= wm);
   const isBeforeWork = nowMins < 480;
 
-  const workTimerDayFinished = !!(todaySession?.is_finished && isAfterWork);
+  const workTimerDayFinished = isWeekend
+    ? false
+    : !!(todaySession?.is_finished && isAfterWork);
 
   const hasActive = !!activeLog;
 
   let workTimerStatusLabel;
-  if (isBeforeWork) workTimerStatusLabel = 'Ish vaqti boshlanmagan';
+  if (isWeekend) workTimerStatusLabel = 'Dam olish kuni 🌟';
+  else if (isBeforeWork) workTimerStatusLabel = 'Ish vaqti boshlanmagan';
   else if (isAbetTime) workTimerStatusLabel = 'Tushlik tanaffusi 🍽';
   else if (isAfterWork && !hasActive) workTimerStatusLabel = 'Ish kuni tugadi';
   else if (isAfterWork && hasActive) workTimerStatusLabel = "Qo'shimcha vaqt";

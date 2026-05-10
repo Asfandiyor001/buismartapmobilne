@@ -1,913 +1,770 @@
-// ═══════════════════════════════════════════════════════════
-// Hisobotim — Personal Analytics Dashboard
-// ═══════════════════════════════════════════════════════════
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+/**
+ * Hisobotim — oylik davomat va vaqt (GET /api/reports/monthly)
+ */
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  StyleSheet,
   TouchableOpacity,
-  Platform,
+  ActivityIndicator,
   RefreshControl,
-  Animated,
-  FlatList,
+  StyleSheet,
+  Platform,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
-  CalendarCheck,
+  Calendar,
   Clock,
-  UserMinus,
-  TrendingUp,
-  Coffee,
   Building2,
-  Star,
-  Wallet,
-  Plus,
-  Minus,
-  AlertCircle,
+  CheckCircle,
+  XCircle,
   ChevronLeft,
   ChevronRight,
-  MapPin,
-  Zap,
+  Award,
+  AlertCircle,
+  TrendingUp,
 } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, Spacing, Radius, Shadow } from '../../theme';
 import { reportAPI } from '../../src/api/report.api';
 
-// ── Constants ─────────────────────────────────────────────
-const MONTHS_UZ = [
-  'Yanvar','Fevral','Mart','Aprel','May','Iyun',
-  'Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr',
-];
-
-const D = {
-  pageBg:     '#F1F5F9',
-  cardBg:     '#FFFFFF',
-  text1:      '#0F172A',
-  text2:      '#475569',
-  text3:      '#94A3B8',
-  border:     '#E2E8F0',
-  green:      '#10B981',
-  greenDark:  '#059669',
-  greenTint:  '#ECFDF5',
-  orange:     '#F59E0B',
-  orangeTint: '#FFFBEB',
-  red:        '#EF4444',
-  redTint:    '#FEF2F2',
-  blue:       '#3B82F6',
-  blueTint:   '#EFF6FF',
-  indigo:     '#6366F1',
-  indigoTint: '#EEF2FF',
-  purple:     '#8B5CF6',
-  gold:       '#D97706',
-  goldTint:   '#FEF3C7',
+const C = {
+  primary: '#1E2761',
+  secondary: '#028090',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  gray: '#64748B',
+  bg: '#F8FAFC',
+  white: '#FFFFFF',
+  slate800: '#1E293B',
+  slate100: '#F1F5F9',
 };
 
-const BUILDING_COLORS = [
-  { bg: D.blueTint,   text: D.blue   },
-  { bg: D.indigoTint, text: D.indigo },
-  { bg: D.greenTint,  text: D.green  },
-  { bg: D.orangeTint, text: D.orange },
-  { bg: '#F5F3FF',    text: D.purple },
+const MONTH_NAMES = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
 ];
 
-// ── Helpers ───────────────────────────────────────────────
 function num(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function fmtMoney(value) {
-  const v = Math.round(num(value, 0));
-  try {
-    return v.toLocaleString('uz-UZ');
-  } catch {
-    return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+function normalizePayload(raw) {
+  if (raw == null) return null;
+
+  if (raw.summary || Array.isArray(raw.sessions)) {
+    const summary = raw.summary || {};
+    return {
+      sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
+      summary: {
+        presentDays: Math.round(num(summary.presentDays ?? summary.present_days, 0)),
+        absentDays: Math.round(num(summary.absentDays ?? summary.absent_days, 0)),
+        vacationDays: Math.round(num(summary.vacationDays ?? summary.vacation_days, 0)),
+        sickDays: Math.round(num(summary.sickDays ?? summary.sick_days, 0)),
+        attendancePct: num(summary.attendancePct ?? summary.attendance_pct, 0),
+        totalHours: num(summary.totalHours ?? summary.total_hours, 0),
+        overtimeHours: num(summary.overtimeHours ?? summary.overtime_hours, 0),
+        expectedHours: num(summary.expectedHours ?? summary.expected_hours, 0),
+        workdaysInMonth: Math.round(
+          num(summary.workdaysInMonth ?? summary.total_work_days ?? summary.workdays_in_month, 0),
+        ),
+        buildingStats: summary.buildingStats ?? summary.building_stats ?? {},
+        mostUsedBuilding: summary.mostUsedBuilding ?? summary.most_used_building ?? null,
+      },
+    };
   }
+
+  const row = raw;
+  let stats = {};
+  if (typeof row.building_stats === 'string') {
+    try {
+      stats = JSON.parse(row.building_stats || '{}');
+    } catch {
+      stats = {};
+    }
+  } else if (row.building_stats && typeof row.building_stats === 'object') {
+    stats = row.building_stats;
+  }
+
+  return {
+    sessions: [],
+    summary: {
+      presentDays: Math.round(num(row.present_days, 0)),
+      absentDays: Math.round(num(row.absent_days, 0)),
+      vacationDays: Math.round(num(row.vacation_days, 0)),
+      sickDays: Math.round(num(row.sick_days, 0)),
+      attendancePct: num(row.attendance_pct, 0),
+      totalHours: num(row.total_hours, 0),
+      overtimeHours: num(row.overtime_hours, 0),
+      expectedHours: num(row.expected_hours, 0),
+      workdaysInMonth: Math.round(num(row.total_work_days, 0)),
+      buildingStats: stats,
+      mostUsedBuilding: row.most_used_building ?? null,
+    },
+  };
 }
 
-function fmtHours(h) {
+function formatTime(timeStr) {
+  if (!timeStr) return '--:--';
+  const s = String(timeStr);
+  return s.length >= 5 ? s.slice(0, 5) : s;
+}
+
+function formatDate(dateStr, monthNames) {
+  if (!dateStr) return '';
+  const iso = String(dateStr).slice(0, 10);
+  const date = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return iso;
+  const days = ['Yak', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+  const mIdx = date.getMonth();
+  const label = monthNames[mIdx] ? monthNames[mIdx].slice(0, 3) : '';
+  return `${days[date.getDay()]}, ${date.getDate()}-${label}`;
+}
+
+function fmtHoursShort(h) {
   const x = num(h, 0);
   const rounded = Math.round(x * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function fmtPct(pct) {
-  const p = num(pct, 0);
-  const r = Math.round(p * 10) / 10;
-  return `${Number.isInteger(r) ? r : r.toFixed(1)}%`;
+function errMessage(e) {
+  if (e == null) return 'Hisobot yuklanmadi';
+  if (typeof e === 'string') return e;
+  if (typeof e.message === 'string' && e.message) return e.message;
+  return 'Hisobot yuklanmadi';
 }
 
-function pctColor(pct) {
-  if (pct >= 90) return D.green;
-  if (pct >= 75) return D.orange;
-  return D.red;
-}
+export default function MyReportScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const route = useRoute();
+  const showBack = route.name === 'Report';
 
-function daysInMonth(year, month) {
-  return new Date(year, month, 0).getDate();
-}
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
 
-function dayOfWeek(year, month, day) {
-  return new Date(year, month - 1, day).getDay(); // 0=Sun
-}
-
-// ── Skeleton block ────────────────────────────────────────
-function Skeleton({ width, height, style }) {
-  const anim = useRef(new Animated.Value(0.4)).current;
+  const mounted = useRef(true);
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(anim, { toValue: 1,   duration: 700, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0.4, duration: 700, useNativeDriver: true }),
-      ])
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const fetchReport = useCallback(async (silent) => {
+    try {
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
+      const res = await reportAPI.fetchMonthlyReport(year, month);
+      if (!mounted.current) return;
+      setData(normalizePayload(res));
+    } catch (e) {
+      if (!mounted.current) return;
+      setError(errMessage(e));
+      setData(null);
+      console.warn('Report error:', e);
+    } finally {
+      if (!mounted.current) return;
+      if (!silent) setLoading(false);
+      setRefreshing(false);
+    }
+  }, [year, month]);
+
+  useEffect(() => {
+    fetchReport(false);
+  }, [fetchReport]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchReport(true);
+  }, [fetchReport]);
+
+  const prevMonth = () => {
+    if (month === 1) {
+      setMonth(12);
+      setYear((y) => y - 1);
+    } else setMonth((m) => m - 1);
+  };
+
+  const nextMonth = () => {
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    if (isCurrentMonth) return;
+    if (month === 12) {
+      setMonth(1);
+      setYear((y) => y + 1);
+    } else setMonth((m) => m + 1);
+  };
+
+  const summary = data?.summary || {};
+  const sessions = data?.sessions || [];
+  const attendancePct = num(summary.attendancePct, 0);
+  const attendanceColor =
+    attendancePct >= 80 ? C.success : attendancePct >= 60 ? C.warning : C.danger;
+
+  const buildingEntries = Object.entries(summary.buildingStats || {}).sort((a, b) => b[1] - a[1]);
+  const maxBuildingHours =
+    buildingEntries.length > 0 ? Math.max(...buildingEntries.map(([, h]) => num(h, 0))) : 0;
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'done':
+        return C.success;
+      case 'active':
+        return C.secondary;
+      case 'absent':
+        return C.danger;
+      case 'sick':
+        return C.warning;
+      case 'vacation':
+        return '#3B82F6';
+      default:
+        return C.gray;
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'done':
+        return 'Keldi';
+      case 'active':
+        return 'Aktiv';
+      case 'absent':
+        return 'Kelmadi';
+      case 'sick':
+        return 'Kasal';
+      case 'vacation':
+        return 'Ta\'til';
+      default:
+        return status ? String(status) : '—';
+    }
+  };
+
+  const atCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+  const nextDisabled = atCurrentMonth;
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingWrap, { paddingTop: insets.top }]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={C.secondary} />
+        <Text style={styles.loadingTxt}>Yuklanmoqda...</Text>
+      </View>
     );
-    loop.start();
-    return () => loop.stop();
-  }, [anim]);
-  return (
-    <Animated.View
-      style={[
-        { width, height, borderRadius: 8, backgroundColor: D.border, opacity: anim },
-        style,
-      ]}
-    />
-  );
-}
-
-function SkeletonCard() {
-  return (
-    <View style={[skStyles.card, { marginBottom: 12 }]}>
-      <Skeleton width="60%" height={18} style={{ marginBottom: 10 }} />
-      <Skeleton width="90%" height={12} style={{ marginBottom: 6 }} />
-      <Skeleton width="75%" height={12} />
-    </View>
-  );
-}
-const skStyles = StyleSheet.create({
-  card: {
-    backgroundColor: D.cardBg, borderRadius: Radius.lg, padding: 16,
-    borderWidth: 1, borderColor: D.border,
-  },
-});
-
-// ── Section label ─────────────────────────────────────────
-function SectionLabel({ icon: Icon, color, label }) {
-  return (
-    <View style={slStyles.row}>
-      <View style={[slStyles.iconWrap, { backgroundColor: color + '22' }]}>
-        <Icon size={14} color={color} strokeWidth={2.2} />
-      </View>
-      <Text style={slStyles.txt}>{label}</Text>
-    </View>
-  );
-}
-const slStyles = StyleSheet.create({
-  row:     { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 12 },
-  iconWrap:{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  txt:     { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: D.text2,
-             textTransform: 'uppercase', letterSpacing: 0.7 },
-});
-
-// ── Thin progress bar ─────────────────────────────────────
-function ProgressBar({ ratio, color, height = 6, bg = D.border }) {
-  const clamped = Math.min(1, Math.max(0, ratio));
-  return (
-    <View style={{ height, borderRadius: height / 2, backgroundColor: bg, overflow: 'hidden' }}>
-      <View style={{ width: `${clamped * 100}%`, height, borderRadius: height / 2, backgroundColor: color }} />
-    </View>
-  );
-}
-
-// ── Month selector ────────────────────────────────────────
-function MonthSelector({ year, month, onChange }) {
-  const ref = useRef(null);
-  const currentIdx = month - 1;
-
-  useEffect(() => {
-    ref.current?.scrollToIndex({ index: currentIdx, animated: true, viewPosition: 0.5 });
-  }, [currentIdx]);
+  }
 
   return (
-    <View style={msStyles.wrap}>
-      <TouchableOpacity
-        onPress={() => {
-          const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
-          onChange(prev.year, prev.month);
-        }}
-        hitSlop={8} style={msStyles.arrow}
-      >
-        <ChevronLeft size={18} color={D.text2} strokeWidth={2} />
-      </TouchableOpacity>
+    <View style={styles.root}>
+      <StatusBar style="light" />
 
-      <FlatList
-        ref={ref}
-        data={MONTHS_UZ}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(_, i) => String(i)}
-        getItemLayout={(_, i) => ({ length: 72, offset: 72 * i, index: i })}
-        renderItem={({ item, index }) => {
-          const active = index === currentIdx;
-          return (
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.titleRow}>
+          {showBack ? (
             <TouchableOpacity
-              style={[msStyles.monthBtn, active && msStyles.monthBtnActive]}
-              onPress={() => onChange(year, index + 1)}
-              activeOpacity={0.75}
+              onPress={() => navigation.goBack()}
+              hitSlop={12}
+              style={styles.headerIconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Orqaga"
             >
-              <Text style={[msStyles.monthTxt, active && msStyles.monthTxtActive]}>
-                {item}
-              </Text>
-              {active && <Text style={msStyles.yearTag}>{year}</Text>}
+              <ChevronLeft size={24} color={C.white} strokeWidth={2.5} />
             </TouchableOpacity>
-          );
-        }}
-        contentContainerStyle={{ paddingHorizontal: 4 }}
-        style={{ flex: 1 }}
-      />
-
-      <TouchableOpacity
-        onPress={() => {
-          const next = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
-          onChange(next.year, next.month);
-        }}
-        hitSlop={8} style={msStyles.arrow}
-      >
-        <ChevronRight size={18} color={D.text2} strokeWidth={2} />
-      </TouchableOpacity>
-    </View>
-  );
-}
-const msStyles = StyleSheet.create({
-  wrap:         { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  arrow:        { padding: 4 },
-  monthBtn:     { width: 68, paddingVertical: 8, paddingHorizontal: 4, borderRadius: Radius.lg,
-    alignItems: 'center', marginHorizontal: 2 },
-  monthBtnActive:{ backgroundColor: Colors.primary },
-  monthTxt:     { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: D.text2 },
-  monthTxtActive:{ color: '#FFFFFF', fontWeight: FontWeight.bold },
-  yearTag:      { fontSize: 9, color: '#FFFFFF99', marginTop: 1 },
-});
-
-// ── Performance ring ──────────────────────────────────────
-function PerformanceRing({ pct, totalHours, expectedHours }) {
-  const color = pctColor(pct);
-  const glowColor = color + '22';
-
-  return (
-    <LinearGradient
-      colors={['#FFFFFF', '#F8FAFC']}
-      style={prStyles.card}
-    >
-      <View style={prStyles.inner}>
-        {/* Ring */}
-        <View style={[prStyles.ringWrap, { shadowColor: color }]}>
-          <View style={[prStyles.ring, { borderColor: color }]}>
-            <View style={[prStyles.glow, { backgroundColor: glowColor }]} />
-            <Text style={[prStyles.pct, { color }]}>{fmtPct(pct)}</Text>
-            <Text style={prStyles.ringLbl}>Samaradorlik</Text>
-          </View>
-        </View>
-
-        {/* Right column */}
-        <View style={prStyles.rightCol}>
-          <Text style={prStyles.balanceTitle}>Vaqt balansi</Text>
-
-          <View style={prStyles.balanceRow}>
-            <View style={[prStyles.dot, { backgroundColor: D.green }]} />
-            <View>
-              <Text style={prStyles.balVal}>{fmtHours(totalHours)} soat</Text>
-              <Text style={prStyles.balLbl}>Ishlangan</Text>
-            </View>
-          </View>
-
-          <View style={prStyles.balanceDivider} />
-
-          <View style={prStyles.balanceRow}>
-            <View style={[prStyles.dot, { backgroundColor: D.border }]} />
-            <View>
-              <Text style={prStyles.balVal}>{fmtHours(expectedHours)} soat</Text>
-              <Text style={prStyles.balLbl}>Kutilgan</Text>
-            </View>
-          </View>
-
-          <View style={prStyles.balanceDivider} />
-
-          <ProgressBar
-            ratio={expectedHours > 0 ? totalHours / expectedHours : 0}
-            color={color}
-            height={6}
-          />
-          <Text style={[prStyles.balFill, { color }]}>
-            {expectedHours > 0 ? Math.round((totalHours / expectedHours) * 100) : 0}% bajarildi
-          </Text>
-        </View>
-      </View>
-    </LinearGradient>
-  );
-}
-const prStyles = StyleSheet.create({
-  card: { borderRadius: Radius.xl, padding: 20, marginBottom: 12,
-    borderWidth: 1, borderColor: D.border, ...Shadow.card },
-  inner: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  ringWrap: {
-    shadowOpacity: 0.25, shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-  },
-  ring: {
-    width: 130, height: 130, borderRadius: 65,
-    borderWidth: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF', overflow: 'hidden',
-  },
-  glow: {
-    position: 'absolute', width: 130, height: 130, borderRadius: 65,
-  },
-  pct:     { fontSize: 30, fontWeight: FontWeight.heavy, letterSpacing: -1 },
-  ringLbl: { fontSize: FontSize.xs, color: D.text3, fontWeight: FontWeight.medium, marginTop: 2 },
-
-  rightCol:     { flex: 1, gap: 6 },
-  balanceTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: D.text2, marginBottom: 4 },
-  balanceRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dot:          { width: 8, height: 8, borderRadius: 4 },
-  balVal:       { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: D.text1 },
-  balLbl:       { fontSize: FontSize.xs, color: D.text3 },
-  balanceDivider:{ height: 1, backgroundColor: D.border, marginVertical: 2 },
-  balFill:      { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, marginTop: 4 },
-});
-
-// ── Stat grid cards ───────────────────────────────────────
-function StatGrid({ presentDays, totalWorkDays, overtimeHours, absentDays, sickDays, vacationDays }) {
-  const items = [
-    {
-      icon: CalendarCheck, color: D.green, bg: D.greenTint,
-      label: 'Kelgan kunlar',
-      val: `${presentDays} / ${totalWorkDays}`,
-    },
-    {
-      icon: Zap, color: D.gold, bg: D.goldTint,
-      label: 'Qo\'shimcha vaqt',
-      val: `${fmtHours(overtimeHours)} soat`,
-    },
-    {
-      icon: UserMinus, color: D.red, bg: D.redTint,
-      label: 'Kelmagan',
-      val: `${absentDays} kun`,
-    },
-    {
-      icon: Coffee, color: D.orange, bg: D.orangeTint,
-      label: 'Kasallik / ta\'til',
-      val: `${sickDays + vacationDays} kun`,
-    },
-  ];
-  return (
-    <View style={sgStyles.grid}>
-      {items.map((it) => (
-        <View key={it.label} style={sgStyles.card}>
-          <View style={[sgStyles.iconWrap, { backgroundColor: it.bg }]}>
-            <it.icon size={20} color={it.color} strokeWidth={2.2} />
-          </View>
-          <Text style={sgStyles.val}>{it.val}</Text>
-          <Text style={sgStyles.lbl} numberOfLines={2}>{it.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-const sgStyles = StyleSheet.create({
-  grid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  card:    { flexGrow: 1, flexBasis: '45%', backgroundColor: D.cardBg,
-    borderRadius: Radius.lg, padding: 14, borderWidth: 1, borderColor: D.border,
-    alignItems: 'flex-start', ...Shadow.xs },
-  iconWrap:{ width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  val:     { fontSize: FontSize.h3, fontWeight: FontWeight.heavy, color: D.text1 },
-  lbl:     { fontSize: FontSize.xs, color: D.text3, marginTop: 2, lineHeight: 16 },
-});
-
-// ── Time balance card ─────────────────────────────────────
-function TimeBalanceCard({ regularHours, expectedHours, overtimeHours, breakHours }) {
-  const regRatio = expectedHours > 0 ? Math.min(1, regularHours / expectedHours) : 0;
-  const otPct    = Math.round((overtimeHours / Math.max(1, expectedHours)) * 100);
-
-  return (
-    <LinearGradient colors={['#FAFAFA', '#FFFFFF']} style={tbStyles.card}>
-      <SectionLabel icon={Clock} color={Colors.secondary} label="Vaqt tahlili" />
-
-      <View style={tbStyles.row}>
-        <View style={{ flex: 1 }}>
-          <View style={tbStyles.labelRow}>
-            <Text style={tbStyles.rowLabel}>Muntazam soatlar</Text>
-            <Text style={[tbStyles.rowVal, { color: D.green }]}>{fmtHours(regularHours)} / {fmtHours(expectedHours)} soat</Text>
-          </View>
-          <ProgressBar ratio={regRatio} color={D.green} height={7} />
-        </View>
-      </View>
-
-      <View style={tbStyles.divider} />
-
-      <View style={tbStyles.chipRow}>
-        <View style={[tbStyles.chip, { backgroundColor: D.goldTint, borderColor: '#FDE68A' }]}>
-          <Zap size={13} color={D.gold} strokeWidth={2.2} />
-          <Text style={[tbStyles.chipTxt, { color: D.gold }]}>
-            +{fmtHours(overtimeHours)} soat qo'shimcha
-          </Text>
-          {otPct > 0 && (
-            <View style={tbStyles.otBadge}>
-              <Text style={tbStyles.otBadgeTxt}>+{otPct}%</Text>
-            </View>
+          ) : (
+            <View style={styles.headerSpacer} />
           )}
+          <Text style={styles.headerTitle}>Hisobotim</Text>
+          <View style={styles.headerSpacer} />
         </View>
 
-        <View style={[tbStyles.chip, { backgroundColor: D.orangeTint, borderColor: '#FDE68A' }]}>
-          <Coffee size={13} color={D.orange} strokeWidth={2.2} />
-          <Text style={[tbStyles.chipTxt, { color: D.orange }]}>
-            {fmtHours(breakHours)} soat tanaffus
+        <View style={styles.monthRow}>
+          <TouchableOpacity onPress={prevMonth} style={styles.monthNavBtn} accessibilityRole="button">
+            <ChevronLeft size={18} color={C.white} strokeWidth={2.5} />
+          </TouchableOpacity>
+
+          <Text style={styles.monthLabel}>
+            {MONTH_NAMES[month - 1]} {year}
           </Text>
+
+          <TouchableOpacity
+            onPress={nextMonth}
+            disabled={nextDisabled}
+            style={[
+              styles.monthNavBtn,
+              nextDisabled && { backgroundColor: 'rgba(255,255,255,0.06)' },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: nextDisabled }}
+          >
+            <ChevronRight
+              size={18}
+              color={nextDisabled ? 'rgba(255,255,255,0.3)' : C.white}
+              strokeWidth={2.5}
+            />
+          </TouchableOpacity>
         </View>
       </View>
-    </LinearGradient>
-  );
-}
-const tbStyles = StyleSheet.create({
-  card:     { borderRadius: Radius.xl, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: D.border, ...Shadow.xs },
-  row:      { marginBottom: 10 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  rowLabel: { fontSize: FontSize.sm, color: D.text2 },
-  rowVal:   { fontSize: FontSize.sm, fontWeight: FontWeight.semibold },
-  divider:  { height: 1, backgroundColor: D.border, marginVertical: 12 },
-  chipRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:     { flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1 },
-  chipTxt:  { fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
-  otBadge:  { paddingHorizontal: 5, paddingVertical: 1, borderRadius: Radius.xs,
-    backgroundColor: D.gold + '33' },
-  otBadgeTxt:{ fontSize: 9, fontWeight: FontWeight.heavy, color: D.gold },
-});
 
-// ── Location insights ─────────────────────────────────────
-function LocationCard({ buildingStats, mostUsedBuilding }) {
-  if (!buildingStats || Object.keys(buildingStats).length === 0) return null;
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[C.secondary]}
+            tintColor={C.secondary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollPad, { paddingBottom: insets.bottom + 32 }]}
+      >
+        {error ? (
+          <View style={styles.errorBanner}>
+            <AlertCircle size={20} color={C.danger} />
+            <Text style={styles.errorTxt} selectable>
+              {error}
+            </Text>
+            <TouchableOpacity onPress={() => { setLoading(true); fetchReport(false); }} hitSlop={8}>
+              <Text style={styles.retryLink}>Qayta</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
-  const entries = Object.entries(buildingStats).sort((a, b) => b[1] - a[1]);
-  const maxHours = entries[0]?.[1] || 1;
-
-  return (
-    <View style={lcStyles.card}>
-      <SectionLabel icon={MapPin} color={D.indigo} label="Joylashuv tahlili" />
-
-      {entries.map(([name, hours], idx) => {
-        const isMost = name === mostUsedBuilding;
-        const color = BUILDING_COLORS[idx % BUILDING_COLORS.length];
-        const ratio = hours / maxHours;
-
-        return (
-          <View key={name} style={lcStyles.row}>
-            <View style={lcStyles.nameWrap}>
-              <View style={[lcStyles.buildingBadge, { backgroundColor: color.bg }]}>
-                <Building2 size={10} color={color.text} strokeWidth={2.5} />
-                <Text style={[lcStyles.buildingName, { color: color.text }]}>{name}</Text>
-              </View>
-              {isMost && (
-                <View style={lcStyles.starBadge}>
-                  <Star size={10} color={D.gold} strokeWidth={2.5} fill={D.gold} />
-                  <Text style={lcStyles.starTxt}>Ko'p ishlagan</Text>
+        {!data?.summary && !error ? (
+          <View style={styles.emptyCard}>
+            <Calendar size={40} color={C.gray} strokeWidth={1.5} />
+            <Text style={styles.emptyTitle}>Ma&apos;lumot yo&apos;q</Text>
+            <Text style={styles.emptySub}>
+              {MONTH_NAMES[month - 1]} {year} uchun hisobot hali mavjud emas.
+            </Text>
+          </View>
+        ) : data?.summary ? (
+          <>
+            <View style={styles.row2}>
+              <View style={styles.statCard}>
+                <View style={styles.statCardTop}>
+                  <View style={[styles.statIconBg, { backgroundColor: '#D1FAE5' }]}>
+                    <CheckCircle size={18} color={C.success} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.statTag}>Keldi</Text>
                 </View>
+                <Text style={[styles.statVal, { color: C.success }]}>{summary.presentDays || 0}</Text>
+                <Text style={styles.statHint}>
+                  {summary.workdaysInMonth || 0} ish kunidan
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <View style={styles.statCardTop}>
+                  <View style={[styles.statIconBg, { backgroundColor: '#FEE2E2' }]}>
+                    <XCircle size={18} color={C.danger} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.statTag}>Kelmadi</Text>
+                </View>
+                <Text style={[styles.statVal, { color: C.danger }]}>{summary.absentDays || 0}</Text>
+                <Text style={styles.statHint}>
+                  {summary.vacationDays || 0} ta&apos;til, {summary.sickDays || 0} kasal
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.row2}>
+              <View style={styles.statCard}>
+                <View style={styles.statCardTop}>
+                  <View style={[styles.statIconBg, { backgroundColor: '#E0F2FE' }]}>
+                    <Clock size={18} color={C.secondary} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.statTag}>Soat</Text>
+                </View>
+                <Text style={[styles.statVal, { color: C.secondary, fontSize: 26 }]}>
+                  {fmtHoursShort(summary.totalHours)} soat
+                </Text>
+                <Text style={styles.statHint}>
+                  +{fmtHoursShort(summary.overtimeHours)} soat qo&apos;shimcha
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <View style={styles.statCardTop}>
+                  <View style={[styles.statIconBg, { backgroundColor: '#FEF3C7' }]}>
+                    <Award size={18} color={C.warning} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.statTag}>Davomat</Text>
+                </View>
+                <Text style={[styles.statVal, { color: attendanceColor }]}>
+                  {attendancePct.toFixed(0)}%
+                </Text>
+                <Text style={styles.statHint}>
+                  {fmtHoursShort(summary.expectedHours)} soat kutilgan
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.panel}>
+              <View style={styles.panelHead}>
+                <Text style={styles.panelTitle}>Davomat ko&apos;rsatkichi</Text>
+                <Text style={[styles.panelPct, { color: attendanceColor }]}>
+                  {attendancePct.toFixed(1)}%
+                </Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${Math.min(attendancePct, 100)}%`,
+                      backgroundColor: attendanceColor,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.progressFoot}>
+                <Text style={styles.muted12}>{summary.presentDays || 0} kun keldi</Text>
+                <Text style={styles.muted12}>{summary.workdaysInMonth || 0} ish kuni</Text>
+              </View>
+            </View>
+
+            <View style={styles.panel}>
+              <View style={styles.panelTitleRow}>
+                <Calendar size={18} color={C.secondary} strokeWidth={2} />
+                <Text style={styles.panelTitle}>Kunlik ma&apos;lumotlar</Text>
+              </View>
+
+              {sessions.length === 0 ? (
+                <View style={styles.sessionsEmpty}>
+                  <Text style={styles.muted14}>Bu oyda sessiyalar topilmadi</Text>
+                </View>
+              ) : (
+                sessions.map((session, idx) => {
+                  const status = session.status;
+                  const statusColor = getStatusColor(status);
+                  const totalSec = num(session.total_seconds, 0);
+                  const totalHours = (totalSec / 3600).toFixed(1);
+                  const otSec = num(session.overtime_seconds, 0);
+                  const overtimeH = (otSec / 3600).toFixed(1);
+                  const hasOvertime = otSec > 0;
+                  const workDate =
+                    session.work_date != null
+                      ? String(session.work_date).slice(0, 10)
+                      : '';
+
+                  return (
+                    <View
+                      key={`${workDate}-${idx}`}
+                      style={[
+                        styles.sessionRow,
+                        idx < sessions.length - 1 && styles.sessionRowBorder,
+                      ]}
+                    >
+                      <View style={styles.sessionMain}>
+                        <View style={styles.sessionTop}>
+                          <View style={[styles.dot, { backgroundColor: statusColor }]} />
+                          <Text style={styles.sessionDate}>
+                            {formatDate(workDate, MONTH_NAMES)}
+                          </Text>
+                          <View style={[styles.badge, { backgroundColor: `${statusColor}22` }]}>
+                            <Text style={[styles.badgeTxt, { color: statusColor }]}>
+                              {getStatusLabel(status)}
+                            </Text>
+                          </View>
+                          {hasOvertime ? (
+                            <View style={styles.otBadge}>
+                              <Text style={styles.otBadgeTxt}>+{overtimeH} soat</Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {status !== 'absent' && status !== 'vacation' && status !== 'sick' ? (
+                          <View style={styles.sessionMeta}>
+                            <Clock size={12} color={C.gray} />
+                            <Text style={styles.metaTxt}>
+                              {formatTime(session.first_entry_time)} →{' '}
+                              {formatTime(session.last_exit_time)}
+                            </Text>
+                            {num(session.buildings_visited, 0) > 0 ? (
+                              <>
+                                <Building2 size={12} color={C.gray} style={{ marginLeft: 8 }} />
+                                <Text style={styles.metaTxt}>
+                                  {session.buildings_visited} bino
+                                </Text>
+                              </>
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {status !== 'absent' && status !== 'vacation' && status !== 'sick' ? (
+                        <View style={styles.sessionHours}>
+                          <Text style={[styles.hoursVal, { color: statusColor }]}>
+                            {totalHours} soat
+                          </Text>
+                          <Text style={styles.hoursLbl}>ishlangan</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })
               )}
             </View>
 
-            <View style={lcStyles.barWrap}>
-              <ProgressBar ratio={ratio} color={color.text} height={7} bg={color.bg} />
-            </View>
+            {buildingEntries.length > 0 ? (
+              <View style={[styles.panel, { marginBottom: 0 }]}>
+                <View style={styles.panelTitleRow}>
+                  <Building2 size={18} color={C.secondary} strokeWidth={2} />
+                  <Text style={styles.panelTitle}>Bino statistikasi</Text>
+                </View>
 
-            <Text style={[lcStyles.hours, { color: color.text }]}>{fmtHours(hours)}s</Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-const lcStyles = StyleSheet.create({
-  card:        { backgroundColor: D.cardBg, borderRadius: Radius.xl, padding: 16,
-    marginBottom: 12, borderWidth: 1, borderColor: D.border, ...Shadow.xs },
-  row:         { marginBottom: 12 },
-  nameWrap:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  buildingBadge:{ flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full },
-  buildingName:{ fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
-  starBadge:   { flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.full,
-    backgroundColor: D.goldTint, borderWidth: 1, borderColor: '#FDE68A' },
-  starTxt:     { fontSize: 9, fontWeight: FontWeight.bold, color: D.gold },
-  barWrap:     { flex: 1, marginBottom: 2 },
-  hours:       { fontSize: FontSize.xs, fontWeight: FontWeight.bold,
-    minWidth: 28, textAlign: 'right', marginTop: -18 },
-});
+                {buildingEntries.map(([name, hours], idx) => {
+                  const palette = [C.secondary, C.primary, '#7C3AED'];
+                  const color = palette[idx % palette.length];
+                  const h = num(hours, 0);
+                  const pct = maxBuildingHours > 0 ? (h / maxBuildingHours) * 100 : 0;
+                  const shortName = name.replace(/^Bino\s+/i, 'B. ');
 
-// ── Finance card ──────────────────────────────────────────
-function FinanceCard({ rewards, fines }) {
-  const r = num(rewards, 0);
-  const f = num(fines, 0);
-  const net = r - f;
-  const netPositive = net >= 0;
+                  return (
+                    <View key={name} style={styles.buildingRow}>
+                      <View style={styles.buildingHead}>
+                        <Text style={styles.buildingName} numberOfLines={1}>
+                          {shortName}
+                        </Text>
+                        <Text style={[styles.buildingHrs, { color }]}>{h.toFixed(1)} soat</Text>
+                      </View>
+                      <View style={styles.buildingTrack}>
+                        <View
+                          style={[
+                            styles.buildingFill,
+                            { width: `${pct}%`, backgroundColor: color },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
 
-  return (
-    <LinearGradient
-      colors={netPositive ? ['#ECFDF5', '#FFFFFF'] : ['#FEF2F2', '#FFFFFF']}
-      style={fcStyles.card}
-    >
-      <SectionLabel icon={Wallet} color={netPositive ? D.green : D.red} label="Moliyaviy hisobot" />
-
-      {/* Net */}
-      <View style={fcStyles.netRow}>
-        <Text style={fcStyles.netLabel}>Sof miqdor</Text>
-        <Text style={[fcStyles.netAmount, { color: netPositive ? D.green : D.red }]}>
-          {netPositive ? '+' : ''}{fmtMoney(net)} so'm
-        </Text>
-      </View>
-
-      <View style={fcStyles.divider} />
-
-      {/* Rewards line */}
-      <View style={fcStyles.lineRow}>
-        <View style={fcStyles.lineLeft}>
-          <View style={[fcStyles.lineIcon, { backgroundColor: D.greenTint }]}>
-            <Plus size={14} color={D.green} strokeWidth={2.5} />
-          </View>
-          <Text style={fcStyles.lineTxt}>Mukofotlar</Text>
-        </View>
-        <Text style={[fcStyles.lineVal, { color: D.green }]}>+{fmtMoney(r)} so'm</Text>
-      </View>
-
-      {/* Fines line */}
-      <View style={fcStyles.lineRow}>
-        <View style={fcStyles.lineLeft}>
-          <View style={[fcStyles.lineIcon, { backgroundColor: D.redTint }]}>
-            <Minus size={14} color={D.red} strokeWidth={2.5} />
-          </View>
-          <Text style={fcStyles.lineTxt}>Jarimalar</Text>
-        </View>
-        <Text style={[fcStyles.lineVal, { color: D.red }]}>-{fmtMoney(f)} so'm</Text>
-      </View>
-
-      {/* Visual ratio bar */}
-      {(r + f) > 0 && (
-        <View style={fcStyles.ratioBg}>
-          <View style={[fcStyles.ratioFill, { width: `${Math.round((r / (r + f)) * 100)}%` }]} />
-          <View style={[fcStyles.ratioFill2, { width: `${Math.round((f / (r + f)) * 100)}%` }]} />
-        </View>
-      )}
-    </LinearGradient>
-  );
-}
-const fcStyles = StyleSheet.create({
-  card:     { borderRadius: Radius.xl, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: D.border, ...Shadow.card },
-  netRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  netLabel: { fontSize: FontSize.sm, color: D.text2, fontWeight: FontWeight.medium },
-  netAmount:{ fontSize: FontSize.h2, fontWeight: FontWeight.heavy, letterSpacing: -0.5 },
-  divider:  { height: 1, backgroundColor: D.border, marginBottom: 12 },
-  lineRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  lineLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lineIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  lineTxt:  { fontSize: FontSize.body, fontWeight: FontWeight.medium, color: D.text1 },
-  lineVal:  { fontSize: FontSize.body, fontWeight: FontWeight.bold },
-  ratioBg:  { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden',
-    backgroundColor: D.border, marginTop: 6 },
-  ratioFill: { height: 6, backgroundColor: D.green },
-  ratioFill2:{ height: 6, backgroundColor: D.red },
-});
-
-// ── Attendance calendar ───────────────────────────────────
-function CalendarGrid({ year, month, presentDays, absentDays, sickDays, vacationDays, sessions }) {
-  const total = daysInMonth(year, month);
-  const firstDow = dayOfWeek(year, month, 1); // 0=Sun
-
-  // Build a day → status map from sessions if available
-  const dayStatus = {};
-  if (Array.isArray(sessions)) {
-    for (const s of sessions) {
-      const d = new Date(s.work_date ?? s.workDate ?? '');
-      if (!Number.isNaN(d.getTime())) {
-        dayStatus[d.getDate()] = s.status;
-      }
-    }
-  }
-
-  // Pad start (Mon-based: Mon=0)
-  const startPad = firstDow === 0 ? 6 : firstDow - 1;
-  const cells = [];
-  for (let i = 0; i < startPad; i++) cells.push(null);
-  for (let d = 1; d <= total; d++) cells.push(d);
-
-  const DOW = ['Du','Se','Ch','Pa','Ju','Sh','Ya'];
-
-  function dotColor(day) {
-    if (!day) return null;
-    const dow = dayOfWeek(year, month, day);
-    if (dow === 0 || dow === 6) return D.border; // weekend
-    const st = dayStatus[day];
-    if (st === 'sick')     return D.orange;
-    if (st === 'vacation') return D.blue;
-    if (st === 'done' || st === 'active') return D.green;
-    if (st === 'absent') return D.red;
-    return D.border;
-  }
-
-  return (
-    <View style={cgStyles.card}>
-      <SectionLabel icon={CalendarCheck} color={D.blue} label="Davomat taqvimi" />
-
-      {/* Legend */}
-      <View style={cgStyles.legend}>
-        {[
-          { color: D.green,  label: 'Keldi' },
-          { color: D.red,    label: 'Kelmadi' },
-          { color: D.orange, label: 'Kasal' },
-          { color: D.blue,   label: "Ta'til" },
-        ].map((l) => (
-          <View key={l.label} style={cgStyles.legendItem}>
-            <View style={[cgStyles.legendDot, { backgroundColor: l.color }]} />
-            <Text style={cgStyles.legendTxt}>{l.label}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Day headers */}
-      <View style={cgStyles.row}>
-        {DOW.map((d) => (
-          <Text key={d} style={cgStyles.dowTxt}>{d}</Text>
-        ))}
-      </View>
-
-      {/* Days */}
-      <View style={cgStyles.grid}>
-        {cells.map((day, idx) => {
-          const color = dotColor(day);
-          const isToday = day === new Date().getDate() &&
-            month === new Date().getMonth() + 1 &&
-            year === new Date().getFullYear();
-          return (
-            <View key={idx} style={cgStyles.cell}>
-              {day ? (
-                <>
-                  <View style={[
-                    cgStyles.dayCircle,
-                    isToday && cgStyles.todayCircle,
-                  ]}>
-                    <Text style={[cgStyles.dayNum, isToday && cgStyles.todayNum]}>{day}</Text>
+                {summary.mostUsedBuilding ? (
+                  <View style={styles.mostUsed}>
+                    <TrendingUp size={14} color={C.secondary} />
+                    <Text style={styles.mostUsedTxt}>
+                      Ko&apos;p ishlagan: {summary.mostUsedBuilding}
+                    </Text>
                   </View>
-                  <View style={[cgStyles.dot, { backgroundColor: color }]} />
-                </>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
-
-      {/* Summary tally */}
-      <View style={cgStyles.tally}>
-        <View style={cgStyles.tallyItem}>
-          <Text style={[cgStyles.tallyNum, { color: D.green }]}>{presentDays}</Text>
-          <Text style={cgStyles.tallyLbl}>Keldi</Text>
-        </View>
-        <View style={cgStyles.tallyItem}>
-          <Text style={[cgStyles.tallyNum, { color: D.red }]}>{absentDays}</Text>
-          <Text style={cgStyles.tallyLbl}>Kelmadi</Text>
-        </View>
-        <View style={cgStyles.tallyItem}>
-          <Text style={[cgStyles.tallyNum, { color: D.orange }]}>{sickDays}</Text>
-          <Text style={cgStyles.tallyLbl}>Kasal</Text>
-        </View>
-        <View style={cgStyles.tallyItem}>
-          <Text style={[cgStyles.tallyNum, { color: D.blue }]}>{vacationDays}</Text>
-          <Text style={cgStyles.tallyLbl}>Ta'til</Text>
-        </View>
-      </View>
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
-const cgStyles = StyleSheet.create({
-  card:       { backgroundColor: D.cardBg, borderRadius: Radius.xl, padding: 16,
-    marginBottom: 12, borderWidth: 1, borderColor: D.border, ...Shadow.xs },
-  legend:     { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 10 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot:  { width: 7, height: 7, borderRadius: 4 },
-  legendTxt:  { fontSize: FontSize.xs, color: D.text3 },
-  row:        { flexDirection: 'row', marginBottom: 4 },
-  dowTxt:     { flex: 1, textAlign: 'center', fontSize: 9, fontWeight: FontWeight.bold,
-    color: D.text3, textTransform: 'uppercase' },
-  grid:       { flexDirection: 'row', flexWrap: 'wrap' },
-  cell:       { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
-  dayCircle:  { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  todayCircle:{ backgroundColor: Colors.primary },
-  dayNum:     { fontSize: FontSize.xs, color: D.text2, fontWeight: FontWeight.medium },
-  todayNum:   { color: '#FFFFFF', fontWeight: FontWeight.bold },
-  dot:        { width: 5, height: 5, borderRadius: 3, marginTop: 1 },
-  tally:      { flexDirection: 'row', borderTopWidth: 1, borderTopColor: D.border, marginTop: 10, paddingTop: 10, gap: 4 },
-  tallyItem:  { flex: 1, alignItems: 'center' },
-  tallyNum:   { fontSize: FontSize.h3, fontWeight: FontWeight.heavy },
-  tallyLbl:   { fontSize: FontSize.xs, color: D.text3, marginTop: 1 },
-});
 
-// ── Main screen ───────────────────────────────────────────
-export default function MyReportScreen() {
-  const now = new Date();
-  const [selYear, setSelYear]   = useState(now.getFullYear());
-  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
-  const [report, setReport]     = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]       = useState(null);
-
-  const load = useCallback(async (year, month, opts = {}) => {
-    const silent = opts.silent === true;
-    if (!silent) {
-      setError(null);
-      setLoading(true);
-    }
-    try {
-      const data = await reportAPI.fetchMonthlyReport(year, month);
-      setReport(data);
-      setError(null);
-    } catch (e) {
-      // Fallback to legacy endpoint for current month
-      try {
-        const fallback = await reportAPI.fetchMyReport();
-        setReport(fallback);
-        setError(null);
-      } catch {
-        if (!silent) {
-          setError(e?.message || 'Yuklashda xatolik');
-          setReport(null);
-        }
+const shadow =
+  Platform.OS === 'ios'
+    ? {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
       }
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, []);
+    : { elevation: 3 };
 
-  useFocusEffect(
-    useCallback(() => {
-      load(selYear, selMonth);
-    }, [load, selYear, selMonth])
-  );
-
-  function onMonthChange(y, m) {
-    setSelYear(y);
-    setSelMonth(m);
-    load(y, m);
-  }
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try { await load(selYear, selMonth, { silent: true }); }
-    finally { setRefreshing(false); }
-  }, [load, selYear, selMonth]);
-
-  // ── Error state ────────────────────────────────────────
-  if (error && !loading) {
-    return (
-      <View style={scStyles.centered}>
-        <AlertCircle size={36} color={Colors.danger} strokeWidth={1.5} />
-        <Text style={scStyles.errTxt}>{error}</Text>
-        <TouchableOpacity style={scStyles.retryBtn} onPress={() => load(selYear, selMonth)} activeOpacity={0.85}>
-          <Text style={scStyles.retryTxt}>Qayta urinish</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // ── Extract data ───────────────────────────────────────
-  const summary  = report?.summary ?? report;
-  const sessions = report?.sessions ?? [];
-
-  const year         = selYear;
-  const month        = selMonth;
-  const attendancePct = num(summary?.attendancePct ?? summary?.attendance_pct, 0);
-  const totalHours    = num(summary?.totalHours     ?? summary?.total_hours,    0);
-  const regularHours  = num(summary?.regularHours   ?? summary?.regular_hours,  0);
-  const overtimeHours = num(summary?.overtimeHours  ?? summary?.overtime_hours, 0);
-  const expectedHours = num(summary?.expectedHours  ?? summary?.expected_hours, 0);
-  const breakHours    = num(summary?.breakHours     ?? summary?.break_hours,    0);
-  const presentDays   = Math.round(num(summary?.presentDays   ?? summary?.present_days,   0));
-  const absentDays    = Math.round(num(summary?.absentDays    ?? summary?.absent_days,    0));
-  const sickDays      = Math.round(num(summary?.sickDays      ?? summary?.sick_days,      0));
-  const vacationDays  = Math.round(num(summary?.vacationDays  ?? summary?.vacation_days,  0));
-  const totalWorkDays = Math.round(num(summary?.workdaysInMonth ?? summary?.total_work_days, 0));
-  const totalRewards  = num(report?.total_rewards, 0);
-  const totalFines    = num(report?.total_fines,   0);
-  const buildingStats = summary?.buildingStats ?? summary?.building_stats ?? {};
-  const mostUsedBuilding = summary?.mostUsedBuilding ?? summary?.most_used_building ?? null;
-
-  return (
-    <ScrollView
-      style={scStyles.scroll}
-      contentContainerStyle={scStyles.pad}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[Colors.secondary]}
-          tintColor={Colors.secondary}
-        />
-      }
-    >
-      {/* ── Page title */}
-      <View style={scStyles.pageHead}>
-        <Text style={scStyles.pageTitle}>Hisobotim</Text>
-        <Text style={scStyles.pageSub}>Shaxsiy analitika va statistika</Text>
-      </View>
-
-      {/* ── Month selector */}
-      <MonthSelector year={year} month={month} onChange={onMonthChange} />
-
-      {/* ── Skeleton or content */}
-      {loading ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
-      ) : !summary ? (
-        <View style={scStyles.emptyWrap}>
-          <CalendarCheck size={40} color={D.text3} strokeWidth={1.5} />
-          <Text style={scStyles.emptyTitle}>Hisobot topilmadi</Text>
-          <Text style={scStyles.emptySub}>
-            {MONTHS_UZ[month - 1]} {year} uchun ma'lumot hali mavjud emas.
-          </Text>
-        </View>
-      ) : (
-        <>
-          {/* Hero ring */}
-          <PerformanceRing
-            pct={attendancePct}
-            totalHours={totalHours}
-            expectedHours={expectedHours}
-          />
-
-          {/* Stat grid */}
-          <StatGrid
-            presentDays={presentDays}
-            totalWorkDays={totalWorkDays}
-            overtimeHours={overtimeHours}
-            absentDays={absentDays}
-            sickDays={sickDays}
-            vacationDays={vacationDays}
-          />
-
-          {/* Time balance */}
-          <TimeBalanceCard
-            regularHours={regularHours}
-            expectedHours={expectedHours}
-            overtimeHours={overtimeHours}
-            breakHours={breakHours}
-          />
-
-          {/* Location insights */}
-          <LocationCard
-            buildingStats={buildingStats}
-            mostUsedBuilding={mostUsedBuilding}
-          />
-
-          {/* Finance */}
-          <FinanceCard rewards={totalRewards} fines={totalFines} />
-
-          {/* Calendar */}
-          <CalendarGrid
-            year={year}
-            month={month}
-            presentDays={presentDays}
-            absentDays={absentDays}
-            sickDays={sickDays}
-            vacationDays={vacationDays}
-            sessions={sessions}
-          />
-        </>
-      )}
-
-      <View style={{ height: Spacing.xl }} />
-    </ScrollView>
-  );
-}
-
-const scStyles = StyleSheet.create({
-  scroll:     { flex: 1, backgroundColor: D.pageBg },
-  pad:        { paddingHorizontal: 14, paddingTop: 10, paddingBottom: Spacing.xl },
-  centered:   { flex: 1, alignItems: 'center', justifyContent: 'center',
-    padding: Spacing.lg, backgroundColor: D.pageBg },
-  errTxt:     { fontSize: FontSize.body, color: Colors.danger, textAlign: 'center',
-    marginVertical: Spacing.md },
-  retryBtn:   { backgroundColor: Colors.secondary, paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm, borderRadius: Radius.full },
-  retryTxt:   { color: '#FFFFFF', fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
-  pageHead:   { marginBottom: 16 },
-  pageTitle:  { fontSize: FontSize.h2, fontWeight: FontWeight.heavy, color: D.text1, letterSpacing: -0.4 },
-  pageSub:    { fontSize: FontSize.sm, color: D.text3, marginTop: 2 },
-  emptyWrap:  { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyTitle: { fontSize: FontSize.h3, fontWeight: FontWeight.semibold, color: D.text2 },
-  emptySub:   { fontSize: FontSize.sm, color: D.text3, textAlign: 'center', lineHeight: 20 },
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bg },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: C.bg,
+  },
+  loadingTxt: { marginTop: 12, color: C.gray, fontSize: 14 },
+  header: {
+    backgroundColor: C.primary,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    ...shadow,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  headerSpacer: { width: 40 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: C.white },
+  monthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 16,
+  },
+  monthNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthLabel: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: C.white,
+    minWidth: 160,
+    textAlign: 'center',
+  },
+  scrollPad: { padding: 16 },
+  errorBanner: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  errorTxt: { color: C.danger, fontSize: 14, flex: 1 },
+  retryLink: { color: C.secondary, fontWeight: '600', fontSize: 14 },
+  row2: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  statCard: {
+    flex: 1,
+    backgroundColor: C.white,
+    borderRadius: 16,
+    padding: 16,
+    ...shadow,
+  },
+  statCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statTag: { fontSize: 11, color: C.gray, fontWeight: '500' },
+  statVal: { fontSize: 32, fontWeight: '800', color: C.slate800 },
+  statHint: { fontSize: 12, color: C.gray, marginTop: 2 },
+  panel: {
+    backgroundColor: C.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    ...shadow,
+  },
+  panelHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  panelTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  panelTitle: { fontSize: 15, fontWeight: '700', color: C.slate800 },
+  panelPct: { fontSize: 15, fontWeight: '700' },
+  progressTrack: {
+    height: 10,
+    backgroundColor: C.slate100,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressFill: { height: 10, borderRadius: 5 },
+  progressFoot: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  muted12: { fontSize: 12, color: C.gray },
+  muted14: { fontSize: 14, color: C.gray, textAlign: 'center' },
+  sessionsEmpty: { paddingVertical: 24, alignItems: 'center' },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  sessionRowBorder: { borderBottomWidth: 1, borderBottomColor: C.slate100 },
+  sessionMain: { flex: 1, paddingRight: 8 },
+  sessionTop: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  sessionDate: { fontSize: 14, fontWeight: '600', color: C.slate800 },
+  badge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+  badgeTxt: { fontSize: 11, fontWeight: '600' },
+  otBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  otBadgeTxt: { fontSize: 10, color: C.warning, fontWeight: '600' },
+  sessionMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginLeft: 16, flexWrap: 'wrap' },
+  metaTxt: { fontSize: 12, color: C.gray },
+  sessionHours: { alignItems: 'flex-end' },
+  hoursVal: { fontSize: 18, fontWeight: '800' },
+  hoursLbl: { fontSize: 11, color: '#94A3B8' },
+  buildingRow: { marginBottom: 12 },
+  buildingHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  buildingName: { fontSize: 13, color: C.slate800, fontWeight: '500', flex: 1, marginRight: 8 },
+  buildingHrs: { fontSize: 13, fontWeight: '600' },
+  buildingTrack: { height: 6, backgroundColor: C.slate100, borderRadius: 3, overflow: 'hidden' },
+  buildingFill: { height: 6, borderRadius: 3 },
+  mostUsed: {
+    marginTop: 8,
+    backgroundColor: '#F0FDFA',
+    borderRadius: 8,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mostUsedTxt: { fontSize: 12, color: C.secondary, fontWeight: '600', flex: 1 },
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    backgroundColor: C.white,
+    borderRadius: 16,
+    ...shadow,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: C.slate800,
+    marginTop: 12,
+  },
+  emptySub: {
+    fontSize: 14,
+    color: C.gray,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
 });

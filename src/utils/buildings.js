@@ -56,6 +56,9 @@ export function getDistance(lat1, lon1, lat2, lon2) {
 
 export function isWorkTime() {
   const now = new Date();
+  const dow = now.getDay();
+  // Dushanba–Shanba (1–6); Yakshanba (0) dam olish
+  if (dow === 0) return false;
   const mins = now.getHours() * 60 + now.getMinutes();
   const from = WORK_START_H * 60 + WORK_START_M;
   const to = WORK_END_H * 60 + WORK_END_M;

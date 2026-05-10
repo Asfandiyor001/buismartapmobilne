@@ -23,7 +23,7 @@ import {
   CheckCircle2,
   Activity,
 } from 'lucide-react-native';
-import { Colors, FontSize, FontWeight, Spacing, Radius, Shadow } from '../theme';
+import { FontSize, FontWeight, Radius, Shadow } from '../theme';
 
 // ── Design tokens (mirrors TeamScreen) ───────────────────
 const D = {
@@ -392,7 +392,7 @@ export default function StaffLogModal({ member, visible, onClose }) {
             {intervals.length === 0 ? (
               <View style={mStyles.emptyWrap}>
                 <Activity size={32} color={D.text3} strokeWidth={1.5} />
-                <Text style={mStyles.emptyTxt}>Bugungi work_logs yo'q</Text>
+                <Text style={mStyles.emptyTxt}>{"Bugungi work_logs yo'q"}</Text>
               </View>
             ) : (
               intervals.map((log, idx) => (

@@ -66,9 +66,12 @@ if (Platform.OS !== 'web') {
     if (error || !data?.locations?.[0]) return;
 
     const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const dayOfWeek = now.getDay();
+    if (dayOfWeek === 0) return;
 
-    if (nowMins < 450 || nowMins > 1050) return;
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const isWorkDay = dayOfWeek >= 1 && dayOfWeek <= 6;
+    if (!isWorkDay || nowMins < 450 || nowMins > 1050) return;
 
     const { latitude, longitude, accuracy } = data.locations[0].coords;
 
@@ -194,8 +197,12 @@ export async function startForegroundFallback() {
   const ping = async () => {
     try {
       const now = new Date();
+      const dayOfWeek = now.getDay();
+      if (dayOfWeek === 0) return;
+
       const nowMins = now.getHours() * 60 + now.getMinutes();
-      if (nowMins < 450 || nowMins > 1050) return;
+      const isWorkDay = dayOfWeek >= 1 && dayOfWeek <= 6;
+      if (!isWorkDay || nowMins < 450 || nowMins > 1050) return;
 
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
