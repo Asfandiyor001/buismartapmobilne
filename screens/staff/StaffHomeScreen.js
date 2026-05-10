@@ -432,50 +432,54 @@ function WorkTimerCard({ workLogs, workEnd = '16:30', isDayFinished = false, fin
   return (
     <Card style={s.card}>
 
-      {/* 1 — Header */}
+      {/* 1 — Header row */}
       <View style={wt.hRow}>
-        <View style={{ flexDirection:'row', alignItems:'center', gap:5 }}>
-          <Clock size={15} color={Colors.textSecondary} strokeWidth={2} />
-          <Text style={s.cardCap}>
-            {firstEntryTime ?? workLogs[0]?.entry ?? '08:30'} dan
-          </Text>
-        </View>
-        <View style={{ flexDirection:'row', alignItems:'center', gap:5 }}>
-          <Animated.View style={[wt.dot, { backgroundColor: dotClr, opacity: (isWeekend || status === 'done' || isDayFinished) ? 1 : dotAnim }]} />
-          <Text style={[wt.statusLbl, { color: dotClr }]}>{statusLbl}</Text>
-        </View>
+        <Text style={wt.cardTitle}>Bugungi ish vaqti</Text>
+        <Clock size={18} color={Colors.textSecondary} strokeWidth={2} />
       </View>
 
-      {/* 2 — Counters */}
-        <View style={wt.counters}>
-        <View style={wt.cBox}>
-          <Text style={[wt.cVal, { color: isWeekend ? weekendGray : Colors.secondary }]}>{hhmmss(regular)}</Text>
-          <Text style={[wt.cLbl, { color: isWeekend ? weekendGray : Colors.secondary }]}>Ish vaqti</Text>
-        </View>
-        {!isWeekend && overtime > 0 && (
-          <>
-            <View style={wt.cDiv} />
-            <View style={wt.cBox}>
-              <Text style={[wt.cVal, { color: Colors.warning }]}>{hhmmss(overtime)}</Text>
-              <Text style={[wt.cLbl, { color: Colors.warning }]}>Qo'shimcha</Text>
-            </View>
-          </>
-        )}
-      </View>
+      {/* 2 — Big timer */}
+      <Text style={[wt.bigTimer, { color: isWeekend ? '#64748B' : Colors.primary }]}>
+        {hhmmss(total)}
+      </Text>
 
-      {/* 3 — Dual progress bar */}
+      {/* 3 — Progress bar with entry/exit labels */}
       <View style={{ marginBottom: Spacing.sm }}>
         <View style={wt.barTrack}>
-          <View style={[wt.barTeal,  { width: `${regFrac * 75}%` }]} />
-          <View style={[wt.barAmber, { width: `${otFrac  * 25}%` }]} />
+          <View style={[wt.barTeal, { width: `${Math.min(regFrac * 75, 75)}%` }]} />
+          <View style={[wt.barAmber, { width: `${Math.min(otFrac * 25, 25)}%` }]} />
         </View>
         <View style={wt.barFoot}>
-          <Text style={s.cardCap}>8s — ish vaqti</Text>
+          <Text style={s.cardCap}>{firstEntryTime ?? workLogs[0]?.entry ?? '08:30'} kirish</Text>
           <Text style={[s.cardCap, { color: overtime > 0 ? Colors.warning : Colors.textMuted }]}>
             {overtime > 0 ? `+${durStr(overtime)} qo'shimcha` : `${workEnd} chiqish`}
           </Text>
         </View>
       </View>
+
+      {/* 4 — Status pill row */}
+      <View style={[wt.hRow, { marginBottom: Spacing.sm }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Animated.View style={[wt.dot, { backgroundColor: dotClr, opacity: (isWeekend || status === 'done' || isDayFinished) ? 1 : dotAnim }]} />
+          <Text style={[wt.statusLbl, { color: dotClr }]}>{statusLbl}</Text>
+        </View>
+        {!isWeekend && overtime > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.amberTint, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.warning }}>+{durStr(overtime)}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* 5 — Abet time card */}
+      {isAbetTime && !isWeekend && (
+        <View style={wt.abetCard}>
+          <Clock size={16} color="#F59E0B" strokeWidth={2} />
+          <View style={{ flex: 1 }}>
+            <Text style={wt.abetTitle}>Abet vaqti • 13:00 — 14:00</Text>
+            <Text style={wt.abetSub}>Shu vaqtga ishlangan: {hhmmss(regular)}</Text>
+          </View>
+        </View>
+      )}
 
       {/* 4 — Building activity timeline */}
       <View style={wt.timeline}>
@@ -953,7 +957,7 @@ function HomeTab({
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
         <SectionHeader title="Bugungi holat" />
 
-        {/* Joylashuv kartochkasi — aktiv bino */}
+        {/* Joylashuv kartochkasi — redesigned */}
         <Card
           style={[
             s.card,
@@ -962,47 +966,34 @@ function HomeTab({
           onPress={isWeekend ? undefined : locationCardNavigate}
         >
           <View style={s.cardRow}>
-            <View style={s.activeDotWrap}>
-              <Animated.View style={[
-                s.activeDotPulse,
-                isWeekend
-                  ? { opacity: 0, transform: [{ scale: 1 }] }
-                  : { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
-                abetLocationCard && { backgroundColor: '#F59E0B' },
-              ]} />
-              <View style={[
-                s.activeDot,
-                abetLocationCard && { backgroundColor: '#F59E0B' },
-                isWeekend && { backgroundColor: '#64748B' },
-              ]} />
+            <View style={[s.locIconCircle, {
+              backgroundColor: isVerified ? Colors.successTint : isOutside ? '#FEF2F2' : Colors.secondaryTint,
+            }]}>
+              <MapPin size={22} color={isVerified ? Colors.success : isOutside ? Colors.danger : isWeekend ? '#64748B' : abetLocationCard ? '#F59E0B' : Colors.secondary} strokeWidth={2} />
             </View>
             <View style={s.cardBody}>
               <Text style={s.cardCap}>Hozirgi joylashuv</Text>
               <Text
-                style={[
-                  s.cardTitle,
-                  isWeekend && { color: '#64748B' },
-                  abetLocationCard && { color: '#F59E0B' },
-                ]}
+                style={[s.cardTitle, isWeekend && { color: '#64748B' }, abetLocationCard && { color: '#F59E0B' }]}
                 numberOfLines={1}
               >
-                {activeBuildingName}
+                {isVerified ? (monitor.currentBuilding?.name || activeBuildingName) : activeBuildingName}
               </Text>
-              {cardSubLine ? (
-                <Text
-                  style={[
-                    s.cardOk,
-                    isWeekend && { color: '#64748B' },
-                    abetLocationCard && { color: '#F59E0B' },
-                  ]}
-                >
-                  {cardSubLine}
-                </Text>
-              ) : null}
+              <Text style={[s.locSubText, {
+                color: isVerified ? Colors.success : isOutside ? Colors.danger : abetLocationCard ? '#F59E0B' : Colors.textMuted,
+              }]} numberOfLines={1}>
+                {isScanning ? 'GPS aniqlanmoqda...'
+                  : isVerified ? `GPS tasdiqlanadi • ± ${monitor.accuracy}m`
+                  : isOutside ? `⚠ Binodan tashqarida`
+                  : isWeekend ? 'Yakshanba — dam olish'
+                  : cardSubLine || locSub}
+              </Text>
             </View>
-            <View style={s.buildingTimer}>
-              <Text style={[s.buildingTimerText, isWeekend && { color: '#64748B' }]}>{buildingElapsed}</Text>
-              <Text style={s.buildingTimerLabel}>bu binoda</Text>
+            <View style={{ alignItems: 'center', gap: 4 }}>
+              {activeWorkRow && !isWeekend ? (
+                <Text style={[s.buildingTimerText, isWeekend && { color: '#64748B' }]}>{buildingElapsed}</Text>
+              ) : null}
+              <ChevronRight size={18} color={Colors.textMuted} strokeWidth={2} />
             </View>
           </View>
         </Card>
@@ -1059,11 +1050,29 @@ function HomeTab({
         </Card>
 
         <SectionHeader title="Tezkor harakatlar" />
+        {/* Primary 2 actions */}
+        <View style={s.quickRow}>
+          {ACTIONS.slice(0, 2).map((a) => (
+            <TouchableOpacity
+              key={a.key}
+              style={[s.quickCard, a.disabled && { opacity: 0.5 }]}
+              activeOpacity={0.82}
+              onPress={a.onPress}
+              disabled={a.disabled}
+            >
+              <View style={[s.quickIcon, { backgroundColor: a.bg }]}>
+                <a.Icon size={28} color={a.color} strokeWidth={2} />
+              </View>
+              <Text style={s.quickLabel}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {/* Secondary actions */}
         <View style={s.actionsGrid}>
-          {ACTIONS.map((a) => (
+          {ACTIONS.slice(2).map((a) => (
             <TouchableOpacity key={a.key} style={[s.actionCard, a.disabled && { opacity: 0.5 }]} activeOpacity={0.82} onPress={a.onPress} disabled={a.disabled}>
               <View style={[s.actionIcon, { backgroundColor: a.bg }]}>
-                <a.Icon size={26} color={a.color} strokeWidth={2} />
+                <a.Icon size={24} color={a.color} strokeWidth={2} />
               </View>
               <Text style={s.actionLabel}>{a.label}</Text>
             </TouchableOpacity>
@@ -1488,9 +1497,19 @@ const s = StyleSheet.create({
   timerText:   { fontSize:40, fontWeight: FontWeight.bold, color: Colors.primary, fontVariant:['tabular-nums'], textAlign:'center', marginBottom: Spacing.sm, letterSpacing:2 },
   timerFooter: { flexDirection:'row', justifyContent:'space-between', marginTop: Spacing.xs },
 
+  // Location card redesign
+  locIconCircle: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  locSubText:    { fontSize: FontSize.xs, marginTop: 3 },
+
+  // Quick actions
+  quickRow:   { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  quickCard:  { flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: Spacing.md, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+  quickIcon:  { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+  quickLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign: 'center' },
+
   actionsGrid: { flexDirection:'row', flexWrap:'wrap', gap: Spacing.sm, marginTop:0, marginBottom: 16 },
-  actionCard:  { width:'47.5%', minHeight: 110, backgroundColor: Colors.surface, borderRadius: 16, padding: Spacing.md, alignItems:'center', justifyContent:'center', elevation: 2, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.06, shadowRadius:4 },
-  actionIcon:  { width:56, height:56, borderRadius:28, alignItems:'center', justifyContent:'center', marginBottom: Spacing.sm },
+  actionCard:  { width:'47.5%', minHeight: 90, backgroundColor: Colors.surface, borderRadius: 14, padding: Spacing.md, alignItems:'center', justifyContent:'center', elevation: 2, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.06, shadowRadius:4 },
+  actionIcon:  { width:48, height:48, borderRadius:24, alignItems:'center', justifyContent:'center', marginBottom: Spacing.sm },
   actionLabel: { fontSize: FontSize.caption, fontWeight: FontWeight.semibold, color: Colors.textPrimary, textAlign:'center' },
 
   divider:        { height:1, backgroundColor: Colors.borderLight, marginVertical:2 },
@@ -1672,6 +1691,13 @@ const wt = StyleSheet.create({
   tTime:      { flex:1, fontSize: FontSize.xs, color: Colors.textSecondary },
   tDur:       { fontSize: FontSize.xs, fontWeight: FontWeight.medium, color: Colors.textPrimary, minWidth:42, textAlign:'right' },
   tActive:    { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.success, minWidth:38, textAlign:'right' },
+
+  // New styles for redesigned WorkTimerCard
+  cardTitle: { fontSize: FontSize.body, fontWeight: FontWeight.bold, color: Colors.textPrimary },
+  bigTimer: { fontSize: 48, fontWeight: FontWeight.heavy, fontVariant: ['tabular-nums'], textAlign: 'center', letterSpacing: 2, marginVertical: Spacing.sm },
+  abetCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.amberTint, borderRadius: 12, padding: Spacing.sm + 4, marginBottom: Spacing.sm, borderWidth: 1, borderColor: '#FDE68A' },
+  abetTitle: { fontSize: FontSize.caption, fontWeight: FontWeight.bold, color: '#92400E' },
+  abetSub:   { fontSize: FontSize.xs, color: '#B45309', marginTop: 2 },
 
   sumRow:  { flexDirection:'row', alignItems:'center', borderTopWidth:1, borderTopColor: Colors.borderLight, paddingTop: Spacing.sm },
   sumDiv:  { width:1, height:14, backgroundColor: Colors.borderLight, marginHorizontal:2 },
