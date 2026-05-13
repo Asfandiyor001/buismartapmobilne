@@ -10,7 +10,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://creation-informative-absence-neural.trycloudflare.com"
+        "EXPO_PUBLIC_API_URL": "https://fit-bless-embolism.ngrok-free.dev"
       }
     },
     "production": {
@@ -18,7 +18,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://creation-informative-absence-neural.trycloudflare.com"
+        "EXPO_PUBLIC_API_URL": "https://fit-bless-embolism.ngrok-free.dev"
       }
     }
   }
