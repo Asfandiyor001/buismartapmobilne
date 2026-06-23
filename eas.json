@@ -4,21 +4,34 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "preview": {
+    "development": {
+      "developmentClient": true,
       "distribution": "internal",
+      "node": "20.19.4",
       "android": {
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://fit-bless-embolism.ngrok-free.dev"
+        "EXPO_PUBLIC_API_URL": "https://backend-production-bec7.up.railway.app"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "node": "20.19.4",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://backend-production-bec7.up.railway.app"
       }
     },
     "production": {
+      "node": "20.19.4",
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://fit-bless-embolism.ngrok-free.dev"
+        "EXPO_PUBLIC_API_URL": "https://backend-production-bec7.up.railway.app"
       }
     }
   }
