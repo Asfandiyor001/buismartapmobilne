@@ -2,8 +2,8 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { navigateTo } from '../../navigation/ref';
 
-// Remote config URL — Vercel da joylashgan, hech qachon o'zgarmaydi
-const REMOTE_CONFIG_URL = 'https://buismartapp.vercel.app/config.json';
+// Remote config URL — Railway backend o'zi beradi (Vercel'ga bog'liq emas)
+const REMOTE_CONFIG_URL = 'https://backend-production-bec7.up.railway.app/config.json';
 const FALLBACK_URL = 'https://backend-production-bec7.up.railway.app';
 
 // Ichki o'zgaruvchi — to'g'ridan import qilma, getBaseURL() dan foydalan
